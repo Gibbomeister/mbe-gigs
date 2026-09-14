@@ -17,9 +17,37 @@ class MBE_Gigs_Post_Type {
 	 * Hooks that do not depend on registration order.
 	 */
 	public static function hooks() {
+		add_filter( 'wp_insert_post_empty_content', array( __CLASS__, 'allow_empty_content' ), 10, 2 );
 		add_filter( 'wp_insert_post_data', array( __CLASS__, 'auto_title' ), 10, 2 );
 		add_filter( 'enter_title_here', array( __CLASS__, 'title_placeholder' ), 10, 2 );
 		add_filter( 'use_block_editor_for_post_type', array( __CLASS__, 'editor' ), 10, 2 );
+	}
+
+	/**
+	 * Let a gig save with an empty title, editor and excerpt.
+	 *
+	 * wp_insert_post() refuses to write a post when the title, content and excerpt
+	 * are all empty and the post type supports all three. It returns before the
+	 * wp_insert_post_data filter, so the generated title never gets a chance to exist
+	 * — and before save_post, so the venue and artist terms are never created either.
+	 * The admin still redirects with "Post published", because redirect_post() doesn't
+	 * check the result. Silent, and exactly what you'd least like to debug.
+	 *
+	 * A gig is defined by its date and its venue, not by prose. Nothing about it
+	 * requires a word of body copy, so the guard doesn't apply to this post type.
+	 *
+	 * @param bool  $maybe_empty Whether WordPress considers the post empty.
+	 * @param array $postarr     Post data.
+	 * @return bool
+	 */
+	public static function allow_empty_content( $maybe_empty, $postarr ) {
+		if ( ! $maybe_empty ) {
+			return $maybe_empty;
+		}
+
+		$post_type = isset( $postarr['post_type'] ) ? $postarr['post_type'] : '';
+
+		return ( MBE_GIGS_CPT === $post_type ) ? false : $maybe_empty;
 	}
 
 	/**
@@ -252,12 +280,9 @@ class MBE_Gigs_Post_Type {
 		$date   = '';
 
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- read-only; the save handler verifies.
-		if ( isset( $_POST['mbe_gig_artist_term'] ) ) {
-			$artist = self::term_name( MBE_GIGS_TAX_ARTIST, wp_unslash( $_POST['mbe_gig_artist_term'] ) );
-		}
-		if ( isset( $_POST['mbe_gig_venue_term'] ) ) {
-			$venue = self::term_name( MBE_GIGS_TAX_VENUE, wp_unslash( $_POST['mbe_gig_venue_term'] ) );
-		}
+		$artist = self::submitted_term_name( MBE_GIGS_TAX_ARTIST, 'mbe_gig_artist_term' );
+		$venue  = self::submitted_term_name( MBE_GIGS_TAX_VENUE, 'mbe_gig_venue_term' );
+
 		if ( isset( $_POST['mbe_gig_date'] ) ) {
 			$date = sanitize_text_field( wp_unslash( $_POST['mbe_gig_date'] ) );
 		}
@@ -297,21 +322,34 @@ class MBE_Gigs_Post_Type {
 	}
 
 	/**
-	 * Resolve a submitted term value (an ID, or "new:Name") to a display name.
+	 * Resolve the submitted venue or artist to a display name.
+	 *
+	 * The select posts either a term ID or the marker `__new__`, in which case the
+	 * name is in a companion field. Terms aren't assigned yet when the title is
+	 * generated — wp_insert_post_data runs before save_post — so the submitted values
+	 * are what there is to work with.
 	 *
 	 * @param string $taxonomy Taxonomy.
-	 * @param string $value    Submitted value.
+	 * @param string $field    Field name.
 	 * @return string
 	 */
-	protected static function term_name( $taxonomy, $value ) {
-		$value = is_scalar( $value ) ? (string) $value : '';
-
-		if ( '' === $value ) {
+	protected static function submitted_term_name( $taxonomy, $field ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- read-only; the save handler verifies.
+		if ( ! isset( $_POST[ $field ] ) ) {
 			return '';
 		}
 
-		if ( 0 === strpos( $value, 'new:' ) ) {
-			return sanitize_text_field( substr( $value, 4 ) );
+		$value = sanitize_text_field( wp_unslash( $_POST[ $field ] ) );
+
+		if ( '__new__' === $value ) {
+			return isset( $_POST[ $field . '_new' ] )
+				? trim( sanitize_text_field( wp_unslash( $_POST[ $field . '_new' ] ) ) )
+				: '';
+		}
+		// phpcs:enable
+
+		if ( '' === $value ) {
+			return '';
 		}
 
 		$term = get_term( (int) $value, $taxonomy );

@@ -24,6 +24,7 @@ class MBE_Gigs_Admin {
 
 		add_action( 'restrict_manage_posts', array( __CLASS__, 'filter_dropdown' ) );
 		add_action( 'pre_get_posts', array( __CLASS__, 'admin_query' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'dateless_notice' ) );
 
 		add_action( 'admin_head', array( __CLASS__, 'styles' ) );
 	}
@@ -75,8 +76,15 @@ class MBE_Gigs_Admin {
 		self::field_row(
 			'mbe_gig_date',
 			$fields['mbe_gig_date']['label'] . ' <span class="mbe-req">*</span>',
+			/*
+			 * No HTML5 `required` here. A browser refusing to submit is silent when it
+			 * can't focus the field — a collapsed meta box is enough — and a Publish
+			 * button that does nothing at all is the worst failure this screen could
+			 * have. A gig with no date is surfaced by the "Needs a date" filter and the
+			 * notice above the list instead.
+			 */
 			sprintf(
-				'<input type="date" id="mbe_gig_date" name="mbe_gig_date" value="%s" required />',
+				'<input type="date" id="mbe_gig_date" name="mbe_gig_date" value="%s" />',
 				esc_attr( $values['mbe_gig_date'] )
 			)
 		);
@@ -534,6 +542,64 @@ class MBE_Gigs_Admin {
 
 		$query->set( 'meta_query', MBE_Gigs_Query::meta_query( $direction, $today ) );
 		$query->set( 'orderby', array( 'mbe_gig_date_clause' => $order ) );
+	}
+
+	/**
+	 * Say so when gigs are hidden from the list because they have no date.
+	 *
+	 * The default list is ordered by gig date, which means it can only contain gigs
+	 * that have one. Without this notice a half-entered gig is invisible on the exact
+	 * screen you'd go to looking for it.
+	 */
+	public static function dateless_notice() {
+		global $pagenow;
+
+		if ( 'edit.php' !== $pagenow || MBE_GIGS_CPT !== get_query_var( 'post_type' ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only list filter.
+		if ( isset( $_GET['mbe_when'] ) && 'nodate' === sanitize_key( wp_unslash( $_GET['mbe_when'] ) ) ) {
+			return;
+		}
+
+		$orphans = get_posts(
+			array(
+				'post_type'      => MBE_GIGS_CPT,
+				'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+				'posts_per_page' => 20,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				'meta_query'     => array(
+					array(
+						'key'     => 'mbe_gig_date',
+						'compare' => 'NOT EXISTS',
+					),
+				),
+			)
+		);
+
+		if ( ! $orphans ) {
+			return;
+		}
+
+		printf(
+			'<div class="notice notice-warning"><p>%s <a href="%s">%s</a></p></div>',
+			esc_html(
+				sprintf(
+					/* translators: %d: number of gigs */
+					_n(
+						'%d gig has no date, so it is not shown in this list.',
+						'%d gigs have no date, so they are not shown in this list.',
+						count( $orphans ),
+						'mbe-gigs'
+					),
+					count( $orphans )
+				)
+			),
+			esc_url( add_query_arg( array( 'post_type' => MBE_GIGS_CPT, 'mbe_when' => 'nodate' ), admin_url( 'edit.php' ) ) ),
+			esc_html__( 'Show them', 'mbe-gigs' )
+		);
 	}
 
 	/**
