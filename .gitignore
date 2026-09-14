@@ -1,0 +1,26 @@
+# Build output
+/build/
+*.zip
+
+# Importer output — logs name real venues and client gigs
+mbe-gigs-import-*.csv
+
+# Venue normalisation worksheets live with the audit data, not in the plugin repo
+venues-*.csv
+cities-*.csv
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.idea/
+.vscode/
+*.sublime-*
+*.swp
+
+# Dependencies, if any are ever added
+/vendor/
+/node_modules/

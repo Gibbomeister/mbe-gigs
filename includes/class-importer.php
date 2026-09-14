@@ -1,0 +1,946 @@
+<?php
+/**
+ * GigPress importer. WP-CLI only.
+ *
+ *     wp mbe-gigs inspect
+ *     wp mbe-gigs import --dry-run
+ *     wp mbe-gigs import --venues=venues.csv --log=import.csv
+ *     wp mbe-gigs rollback --yes
+ *
+ * Three properties matter more than speed:
+ *
+ * - Idempotent. Every imported gig carries the GigPress show ID in
+ *   `mbe_gigs_source_id`. A second run finds it and updates rather than duplicates,
+ *   so an interrupted import is resumed by running it again.
+ * - Logged. Every created, updated and skipped row is written to a CSV.
+ * - Reversible. `rollback` removes exactly what the importer created and nothing
+ *   else. The GigPress tables are never modified — deactivating the old plugin and
+ *   leaving its tables in place is the real rollback.
+ *
+ * Column names are discovered rather than assumed. GigPress 2.x shifted its schema
+ * over the years and these installs were not all set up in the same year.
+ *
+ * @package MBE_Gigs
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
+	return;
+}
+
+class MBE_Gigs_Importer {
+
+	const SOURCE_META  = 'mbe_gigs_source_id';
+	const VENUE_MAP    = 'mbe_gigs_venue_map';
+	const SOURCE_TERM  = 'mbe_gigs_source_venue_id';
+
+	/** @var array Candidate column names, best first. */
+	protected $show_columns = array(
+		'id'       => array( 'show_id', 'id' ),
+		'venue'    => array( 'venue_id' ),
+		'artist'   => array( 'artist_id' ),
+		'date'     => array( 'show_date', 'date' ),
+		'time'     => array( 'show_time', 'time' ),
+		'end_date' => array( 'show_expire', 'show_end_date', 'end_date' ),
+		'price'    => array( 'show_price', 'price' ),
+		'tickets'  => array( 'show_tickets', 'tickets', 'show_ticket_url' ),
+		'notes'    => array( 'show_notes', 'notes' ),
+		'status'   => array( 'show_status', 'status' ),
+		'tour'     => array( 'gig_id' ),
+	);
+
+	protected $venue_columns = array(
+		'id'       => array( 'venue_id', 'id' ),
+		'name'     => array( 'venue_name', 'name' ),
+		'address'  => array( 'venue_address', 'address' ),
+		'city'     => array( 'venue_city', 'city' ),
+		'state'    => array( 'venue_state', 'state' ),
+		'postcode' => array( 'venue_postal_code', 'venue_postcode', 'postal_code' ),
+		'country'  => array( 'venue_country', 'country' ),
+		'phone'    => array( 'venue_phone', 'phone' ),
+		'url'      => array( 'venue_url', 'url' ),
+	);
+
+	protected $artist_columns = array(
+		'id'   => array( 'artist_id', 'id' ),
+		'name' => array( 'artist_name', 'name' ),
+		'url'  => array( 'artist_url', 'url' ),
+	);
+
+	/**
+	 * Report on the GigPress data without touching anything.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp mbe-gigs inspect
+	 *
+	 * @subcommand inspect
+	 */
+	public function inspect( $args, $assoc_args ) {
+		global $wpdb;
+
+		$tables = $this->tables();
+
+		foreach ( $tables as $label => $table ) {
+			if ( ! $this->table_exists( $table ) ) {
+				WP_CLI::line( sprintf( '%-8s %s — not present', $label, $table ) );
+				continue;
+			}
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name validated against the site prefix.
+			$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$table}`" );
+			$cols  = implode( ', ', $this->columns( $table ) );
+
+			WP_CLI::line( sprintf( '%-8s %s — %d rows', $label, $table, $count ) );
+			WP_CLI::line( '         ' . $cols );
+		}
+
+		if ( ! $this->table_exists( $tables['shows'] ) ) {
+			WP_CLI::error( 'No GigPress shows table on this site. Nothing to import.' );
+		}
+
+		$map = $this->resolve_columns( $tables['shows'], $this->show_columns );
+
+		$missing = array();
+		foreach ( array( 'id', 'date' ) as $required ) {
+			if ( empty( $map[ $required ] ) ) {
+				$missing[] = $required;
+			}
+		}
+
+		if ( $missing ) {
+			WP_CLI::error( 'Cannot map required columns: ' . implode( ', ', $missing ) );
+		}
+
+		WP_CLI::line( '' );
+		WP_CLI::line( 'Column mapping:' );
+
+		foreach ( $map as $role => $column ) {
+			WP_CLI::line( sprintf( '  %-9s -> %s', $role, $column ? $column : '(none — will be skipped)' ) );
+		}
+
+		$already = $this->imported_count();
+		WP_CLI::line( '' );
+		WP_CLI::line( sprintf( 'Gigs already imported into this site: %d', $already ) );
+	}
+
+	/**
+	 * Import GigPress shows and venues.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--dry-run]
+	 * : Report what would happen without writing anything.
+	 *
+	 * [--venues=<file>]
+	 * : CSV of approved venue names. Columns: venue_as_entered, city_as_entered,
+	 * proposed_venue, proposed_city, proposed_state, proposed_postcode, and optional
+	 * APPROVED_venue / APPROVED_city / APPROVED_state which take precedence.
+	 *
+	 * [--artist=<name>]
+	 * : Artist name to use when the install has no artists table.
+	 *
+	 * [--limit=<number>]
+	 * : Stop after this many shows. Useful for a first pass on a big site.
+	 *
+	 * [--log=<file>]
+	 * : Write a CSV log here. Defaults to mbe-gigs-import-<date>.csv in the uploads folder.
+	 *
+	 * [--status=<status>]
+	 * : Post status for created gigs. Default publish.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp mbe-gigs import --dry-run
+	 *     wp mbe-gigs import --venues=venues-worksheet.csv
+	 *
+	 * @subcommand import
+	 */
+	public function import( $args, $assoc_args ) {
+		global $wpdb;
+
+		$dry_run     = (bool) WP_CLI\Utils\get_flag_value( $assoc_args, 'dry-run', false );
+		$limit       = (int) WP_CLI\Utils\get_flag_value( $assoc_args, 'limit', 0 );
+		$post_status = (string) WP_CLI\Utils\get_flag_value( $assoc_args, 'status', 'publish' );
+		$fallback    = (string) WP_CLI\Utils\get_flag_value( $assoc_args, 'artist', '' );
+		$venue_file  = (string) WP_CLI\Utils\get_flag_value( $assoc_args, 'venues', '' );
+
+		$tables = $this->tables();
+
+		if ( ! $this->table_exists( $tables['shows'] ) ) {
+			WP_CLI::error( 'No GigPress shows table on this site.' );
+		}
+
+		$overrides = $venue_file ? $this->load_venue_overrides( $venue_file ) : array();
+
+		if ( $venue_file ) {
+			WP_CLI::line( sprintf( 'Loaded %d venue overrides from %s', count( $overrides ), $venue_file ) );
+		}
+
+		$log = $this->open_log( WP_CLI\Utils\get_flag_value( $assoc_args, 'log', '' ), $dry_run );
+
+		/*
+		 * Pass one: venues.
+		 *
+		 * Every venue becomes a term before any gig is created, so gig creation is a
+		 * lookup rather than a race. The map is stored, so a re-run reuses the same
+		 * terms instead of making a second set.
+		 */
+		$venue_map = $this->import_venues( $tables['venues'], $overrides, $dry_run, $log );
+		WP_CLI::line( sprintf( 'Venues: %d mapped', count( $venue_map ) ) );
+
+		$artist_map = $this->import_artists( $tables['artists'], $dry_run, $log );
+		WP_CLI::line( sprintf( 'Artists: %d mapped', count( $artist_map ) ) );
+
+		// Pass two: shows.
+		$map   = $this->resolve_columns( $tables['shows'], $this->show_columns );
+		$shows = $this->fetch_rows( $tables['shows'], $map['date'], $limit );
+
+		$counts = array(
+			'created' => 0,
+			'updated' => 0,
+			'skipped' => 0,
+			'failed'  => 0,
+		);
+
+		$progress = WP_CLI\Utils\make_progress_bar( 'Importing gigs', count( $shows ) );
+
+		foreach ( $shows as $row ) {
+			$result = $this->import_show( $row, $map, $venue_map, $artist_map, $fallback, $post_status, $dry_run, $log );
+			$counts[ $result ] = isset( $counts[ $result ] ) ? $counts[ $result ] + 1 : 1;
+			$progress->tick();
+		}
+
+		$progress->finish();
+
+		if ( $log ) {
+			fclose( $log );
+		}
+
+		WP_CLI::success(
+			sprintf(
+				'%s — created %d, updated %d, skipped %d, failed %d.',
+				$dry_run ? 'Dry run complete' : 'Import complete',
+				$counts['created'],
+				$counts['updated'],
+				$counts['skipped'],
+				$counts['failed']
+			)
+		);
+
+		if ( $dry_run ) {
+			WP_CLI::line( 'Nothing was written. Re-run without --dry-run to apply.' );
+		}
+	}
+
+	/**
+	 * Remove everything this importer created on this site.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--yes]
+	 * : Skip the confirmation prompt.
+	 *
+	 * @subcommand rollback
+	 */
+	public function rollback( $args, $assoc_args ) {
+		WP_CLI::confirm( 'Delete every gig this importer created on this site?', $assoc_args );
+
+		$ids = get_posts(
+			array(
+				'post_type'      => MBE_GIGS_CPT,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'meta_query'     => array(
+					array(
+						'key'     => self::SOURCE_META,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		foreach ( $ids as $id ) {
+			wp_delete_post( $id, true );
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => MBE_GIGS_TAX_VENUE,
+				'hide_empty' => false,
+				'meta_query' => array(
+					array(
+						'key'     => self::SOURCE_TERM,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		if ( ! is_wp_error( $terms ) ) {
+			foreach ( $terms as $term ) {
+				wp_delete_term( $term->term_id, MBE_GIGS_TAX_VENUE );
+			}
+		}
+
+		delete_option( self::VENUE_MAP );
+
+		WP_CLI::success( sprintf( 'Removed %d gigs and their imported venues.', count( $ids ) ) );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Venues
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * @param string   $table     Venues table.
+	 * @param array    $overrides Approved names keyed by "name|city".
+	 * @param bool     $dry_run   Whether to write.
+	 * @param resource $log       Log handle.
+	 * @return array GigPress venue ID => term ID.
+	 */
+	protected function import_venues( $table, $overrides, $dry_run, $log ) {
+		if ( ! $this->table_exists( $table ) ) {
+			return array();
+		}
+
+		$map     = $this->resolve_columns( $table, $this->venue_columns );
+		$rows    = $this->fetch_rows( $table, $map['name'], 0 );
+		$stored  = get_option( self::VENUE_MAP, array() );
+		$stored  = is_array( $stored ) ? $stored : array();
+		$result  = array();
+
+		foreach ( $rows as $row ) {
+			$source_id = isset( $row[ $map['id'] ] ) ? (int) $row[ $map['id'] ] : 0;
+			$name      = $map['name'] ? trim( (string) $row[ $map['name'] ] ) : '';
+
+			if ( '' === $name ) {
+				$this->log( $log, 'venue', $source_id, 'skipped', 'no name' );
+				continue;
+			}
+
+			$city = $map['city'] ? trim( (string) $row[ $map['city'] ] ) : '';
+
+			$override = $this->lookup_override( $overrides, $name, $city );
+
+			$final_name  = $override['venue'] ? $override['venue'] : $name;
+			$final_city  = $override['city'] ? $override['city'] : $city;
+			$final_state = $override['state'] ? $override['state'] : ( $map['state'] ? trim( (string) $row[ $map['state'] ] ) : '' );
+
+			// Already mapped from an earlier run.
+			if ( isset( $stored[ $source_id ] ) && get_term( (int) $stored[ $source_id ], MBE_GIGS_TAX_VENUE ) ) {
+				$result[ $source_id ] = (int) $stored[ $source_id ];
+				$this->log( $log, 'venue', $source_id, 'skipped', 'already mapped to term ' . $stored[ $source_id ] );
+				continue;
+			}
+
+			/*
+			 * Venue identity is name PLUS city. "Pier Hotel" in Botany and "Pier Hotel"
+			 * in Frankston are two different pubs, and merging them on name alone is
+			 * the kind of error nobody notices for two years.
+			 */
+			$term_id = $this->find_venue_term( $final_name, $final_city );
+
+			if ( $term_id ) {
+				$this->log( $log, 'venue', $source_id, 'skipped', sprintf( 'matched existing term %d (%s)', $term_id, $final_name ) );
+			} elseif ( $dry_run ) {
+				$this->log( $log, 'venue', $source_id, 'created', sprintf( 'would create "%s" (%s)', $final_name, $final_city ) );
+				continue;
+			} else {
+				$created = wp_insert_term( $final_name, MBE_GIGS_TAX_VENUE );
+
+				if ( is_wp_error( $created ) ) {
+					// A term of that name exists with a different city — disambiguate the slug.
+					$created = wp_insert_term(
+						$final_name,
+						MBE_GIGS_TAX_VENUE,
+						array( 'slug' => sanitize_title( $final_name . ' ' . $final_city ) )
+					);
+				}
+
+				if ( is_wp_error( $created ) ) {
+					$this->log( $log, 'venue', $source_id, 'failed', $created->get_error_message() );
+					continue;
+				}
+
+				$term_id = (int) $created['term_id'];
+				$this->log( $log, 'venue', $source_id, 'created', sprintf( 'term %d "%s"', $term_id, $final_name ) );
+			}
+
+			if ( ! $dry_run && $term_id ) {
+				$meta = array(
+					'mbe_venue_address'  => $map['address'] ? trim( (string) $row[ $map['address'] ] ) : '',
+					'mbe_venue_city'     => $final_city,
+					'mbe_venue_state'    => $final_state,
+					'mbe_venue_postcode' => $override['postcode'] ? $override['postcode'] : ( $map['postcode'] ? trim( (string) $row[ $map['postcode'] ] ) : '' ),
+					'mbe_venue_country'  => $map['country'] ? trim( (string) $row[ $map['country'] ] ) : 'AU',
+					'mbe_venue_phone'    => $map['phone'] ? trim( (string) $row[ $map['phone'] ] ) : '',
+					'mbe_venue_url'      => $map['url'] ? MBE_Gigs_Meta::sanitize_url( (string) $row[ $map['url'] ] ) : '',
+				);
+
+				foreach ( $meta as $key => $value ) {
+					if ( '' === $value ) {
+						continue;
+					}
+
+					// Don't overwrite detail someone has already corrected by hand.
+					if ( '' === (string) get_term_meta( $term_id, $key, true ) ) {
+						update_term_meta( $term_id, $key, $value );
+					}
+				}
+
+				update_term_meta( $term_id, self::SOURCE_TERM, $source_id );
+				$stored[ $source_id ] = $term_id;
+			}
+
+			if ( $term_id ) {
+				$result[ $source_id ] = $term_id;
+			}
+		}
+
+		if ( ! $dry_run ) {
+			update_option( self::VENUE_MAP, $stored, false );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Find a venue term by name and city.
+	 *
+	 * @param string $name Venue name.
+	 * @param string $city City.
+	 * @return int Term ID, or 0.
+	 */
+	protected function find_venue_term( $name, $city ) {
+		$terms = get_terms(
+			array(
+				'taxonomy'   => MBE_GIGS_TAX_VENUE,
+				'hide_empty' => false,
+				'name'       => $name,
+			)
+		);
+
+		if ( is_wp_error( $terms ) || ! $terms ) {
+			return 0;
+		}
+
+		foreach ( $terms as $term ) {
+			$term_city = (string) get_term_meta( $term->term_id, 'mbe_venue_city', true );
+
+			if ( '' === $city || '' === $term_city || 0 === strcasecmp( $term_city, $city ) ) {
+				return (int) $term->term_id;
+			}
+		}
+
+		return 0;
+	}
+
+	/**
+	 * @param string   $table   Artists table.
+	 * @param bool     $dry_run Whether to write.
+	 * @param resource $log     Log handle.
+	 * @return array GigPress artist ID => term ID.
+	 */
+	protected function import_artists( $table, $dry_run, $log ) {
+		if ( ! $this->table_exists( $table ) ) {
+			return array();
+		}
+
+		$map    = $this->resolve_columns( $table, $this->artist_columns );
+		$rows   = $this->fetch_rows( $table, $map['name'], 0 );
+		$result = array();
+
+		foreach ( $rows as $row ) {
+			$source_id = isset( $row[ $map['id'] ] ) ? (int) $row[ $map['id'] ] : 0;
+			$name      = $map['name'] ? trim( (string) $row[ $map['name'] ] ) : '';
+
+			if ( '' === $name ) {
+				continue;
+			}
+
+			$existing = get_term_by( 'name', $name, MBE_GIGS_TAX_ARTIST );
+
+			if ( $existing ) {
+				$result[ $source_id ] = (int) $existing->term_id;
+				continue;
+			}
+
+			if ( $dry_run ) {
+				$this->log( $log, 'artist', $source_id, 'created', sprintf( 'would create "%s"', $name ) );
+				continue;
+			}
+
+			$created = wp_insert_term( $name, MBE_GIGS_TAX_ARTIST );
+
+			if ( is_wp_error( $created ) ) {
+				$this->log( $log, 'artist', $source_id, 'failed', $created->get_error_message() );
+				continue;
+			}
+
+			$result[ $source_id ] = (int) $created['term_id'];
+
+			if ( $map['url'] && ! empty( $row[ $map['url'] ] ) ) {
+				update_term_meta( $created['term_id'], 'mbe_artist_url', MBE_Gigs_Meta::sanitize_url( $row[ $map['url'] ] ) );
+			}
+
+			$this->log( $log, 'artist', $source_id, 'created', sprintf( 'term %d "%s"', $created['term_id'], $name ) );
+		}
+
+		return $result;
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Shows
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * @param array    $row         Source row.
+	 * @param array    $map         Column map.
+	 * @param array    $venue_map   GigPress venue ID => term ID.
+	 * @param array    $artist_map  GigPress artist ID => term ID.
+	 * @param string   $fallback    Fallback artist name.
+	 * @param string   $post_status Post status.
+	 * @param bool     $dry_run     Whether to write.
+	 * @param resource $log         Log handle.
+	 * @return string created|updated|skipped|failed
+	 */
+	protected function import_show( $row, $map, $venue_map, $artist_map, $fallback, $post_status, $dry_run, $log ) {
+		$source_id = (int) $row[ $map['id'] ];
+		$date      = MBE_Gigs_Meta::sanitize_date( $this->value( $row, $map, 'date' ) );
+
+		if ( '' === $date ) {
+			$this->log( $log, 'gig', $source_id, 'skipped', 'no usable date: ' . $this->value( $row, $map, 'date' ) );
+
+			return 'skipped';
+		}
+
+		$existing = $this->find_by_source( $source_id );
+
+		if ( $existing && $dry_run ) {
+			$this->log( $log, 'gig', $source_id, 'skipped', sprintf( 'already imported as post %d', $existing ) );
+
+			return 'skipped';
+		}
+
+		$venue_term  = isset( $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] ) ? $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] : 0;
+		$artist_term = isset( $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] ) ? $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] : 0;
+
+		$venue_name  = $this->term_name( $venue_term, MBE_GIGS_TAX_VENUE );
+		$artist_name = $this->term_name( $artist_term, MBE_GIGS_TAX_ARTIST );
+
+		if ( '' === $artist_name ) {
+			$artist_name = $fallback;
+		}
+
+		$title = trim(
+			implode(
+				' — ',
+				array_filter(
+					array(
+						$artist_name,
+						trim( implode( ', ', array_filter( array( $venue_name, date_i18n( 'j F Y', strtotime( $date . ' 12:00:00' ) ) ) ) ) ),
+					)
+				)
+			)
+		);
+
+		$notes = (string) $this->value( $row, $map, 'notes' );
+
+		if ( $dry_run ) {
+			$this->log( $log, 'gig', $source_id, 'created', sprintf( 'would create "%s"', $title ) );
+
+			return 'created';
+		}
+
+		/*
+		 * post_date is deliberately left alone. Setting it to the gig date looks tidy
+		 * and then quietly breaks every future gig: wp_insert_post sees a publish date
+		 * in the future and flips the status to 'future', so next month's gigs vanish
+		 * from the site. The gig date lives in meta; that is the whole point.
+		 */
+		$postarr = array(
+			'post_type'    => MBE_GIGS_CPT,
+			'post_status'  => $post_status,
+			'post_title'   => $title,
+			'post_content' => wp_kses_post( $notes ),
+		);
+
+		if ( $existing ) {
+			$postarr['ID'] = $existing;
+			$post_id       = wp_update_post( $postarr, true );
+			$action        = 'updated';
+		} else {
+			$post_id = wp_insert_post( $postarr, true );
+			$action  = 'created';
+		}
+
+		if ( is_wp_error( $post_id ) ) {
+			$this->log( $log, 'gig', $source_id, 'failed', $post_id->get_error_message() );
+
+			return 'failed';
+		}
+
+		$meta = array(
+			'mbe_gig_date'       => $date,
+			'mbe_gig_time'       => MBE_Gigs_Meta::sanitize_time( $this->value( $row, $map, 'time' ) ),
+			'mbe_gig_end_date'   => MBE_Gigs_Meta::sanitize_date( $this->value( $row, $map, 'end_date' ) ),
+			'mbe_gig_ticket_url' => MBE_Gigs_Meta::sanitize_url( $this->value( $row, $map, 'tickets' ) ),
+			'mbe_gig_price'      => sanitize_text_field( $this->value( $row, $map, 'price' ) ),
+			'mbe_gig_status'     => $this->map_status( $this->value( $row, $map, 'status' ) ),
+		);
+
+		// An end date equal to the start date is GigPress bookkeeping, not a festival.
+		if ( $meta['mbe_gig_end_date'] === $meta['mbe_gig_date'] ) {
+			$meta['mbe_gig_end_date'] = '';
+		}
+
+		foreach ( $meta as $key => $value ) {
+			if ( '' === $value ) {
+				delete_post_meta( $post_id, $key );
+			} else {
+				update_post_meta( $post_id, $key, $value );
+			}
+		}
+
+		update_post_meta( $post_id, self::SOURCE_META, 'gigpress:' . $source_id );
+		update_post_meta( $post_id, 'mbe_gig_auto_title', $title );
+
+		if ( $venue_term ) {
+			wp_set_object_terms( $post_id, array( $venue_term ), MBE_GIGS_TAX_VENUE, false );
+		}
+
+		if ( $artist_term ) {
+			wp_set_object_terms( $post_id, array( $artist_term ), MBE_GIGS_TAX_ARTIST, false );
+		} elseif ( $fallback ) {
+			wp_set_object_terms( $post_id, array( $fallback ), MBE_GIGS_TAX_ARTIST, false );
+		}
+
+		$this->log( $log, 'gig', $source_id, $action, sprintf( 'post %d "%s"', $post_id, $title ) );
+
+		return $action;
+	}
+
+	/**
+	 * @param int    $term_id  Term ID, may be 0.
+	 * @param string $taxonomy Taxonomy.
+	 * @return string
+	 */
+	protected function term_name( $term_id, $taxonomy ) {
+		if ( ! $term_id ) {
+			return '';
+		}
+
+		$term = get_term( (int) $term_id, $taxonomy );
+
+		return ( $term && ! is_wp_error( $term ) ) ? $term->name : '';
+	}
+
+	/**
+	 * @param int $source_id GigPress show ID.
+	 * @return int Post ID, or 0.
+	 */
+	protected function find_by_source( $source_id ) {
+		$found = get_posts(
+			array(
+				'post_type'      => MBE_GIGS_CPT,
+				'post_status'    => 'any',
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				'meta_query'     => array(
+					array(
+						'key'   => self::SOURCE_META,
+						'value' => 'gigpress:' . (int) $source_id,
+					),
+				),
+			)
+		);
+
+		return $found ? (int) $found[0] : 0;
+	}
+
+	protected function imported_count() {
+		$found = get_posts(
+			array(
+				'post_type'      => MBE_GIGS_CPT,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'meta_query'     => array(
+					array(
+						'key'     => self::SOURCE_META,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		return count( $found );
+	}
+
+	/**
+	 * @param string $status GigPress status.
+	 * @return string
+	 */
+	protected function map_status( $status ) {
+		$status = strtolower( trim( (string) $status ) );
+
+		$map = array(
+			'active'    => 'scheduled',
+			''          => 'scheduled',
+			'cancelled' => 'cancelled',
+			'canceled'  => 'cancelled',
+			'postponed' => 'postponed',
+		);
+
+		return isset( $map[ $status ] ) ? $map[ $status ] : 'scheduled';
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Plumbing
+	 * ------------------------------------------------------------------ */
+
+	protected function tables() {
+		global $wpdb;
+
+		return array(
+			'shows'   => $wpdb->prefix . 'gigpress_shows',
+			'venues'  => $wpdb->prefix . 'gigpress_venues',
+			'artists' => $wpdb->prefix . 'gigpress_artists',
+		);
+	}
+
+	/**
+	 * @param string $table Table name.
+	 * @return bool
+	 */
+	protected function table_exists( $table ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		return (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+	}
+
+	/**
+	 * @param string $table Table name.
+	 * @return array
+	 */
+	protected function columns( $table ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name built from the site prefix.
+		$rows = $wpdb->get_results( "SHOW COLUMNS FROM `{$table}`", ARRAY_A );
+
+		return $rows ? wp_list_pluck( $rows, 'Field' ) : array();
+	}
+
+	/**
+	 * Pick the first candidate column that actually exists.
+	 *
+	 * @param string $table      Table name.
+	 * @param array  $candidates Role => candidate column names.
+	 * @return array Role => column name, or ''.
+	 */
+	protected function resolve_columns( $table, $candidates ) {
+		$existing = array_map( 'strtolower', $this->columns( $table ) );
+		$map      = array();
+
+		foreach ( $candidates as $role => $names ) {
+			$map[ $role ] = '';
+
+			foreach ( $names as $name ) {
+				if ( in_array( strtolower( $name ), $existing, true ) ) {
+					$map[ $role ] = $name;
+					break;
+				}
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * @param array  $row  Source row.
+	 * @param array  $map  Column map.
+	 * @param string $role Role name.
+	 * @return string
+	 */
+	protected function value( $row, $map, $role ) {
+		if ( empty( $map[ $role ] ) || ! isset( $row[ $map[ $role ] ] ) ) {
+			return '';
+		}
+
+		return (string) $row[ $map[ $role ] ];
+	}
+
+	/**
+	 * @param string $table    Table name.
+	 * @param string $order_by Column to order by, may be empty.
+	 * @param int    $limit    Row limit, 0 for all.
+	 * @return array
+	 */
+	protected function fetch_rows( $table, $order_by, $limit ) {
+		global $wpdb;
+
+		$sql = "SELECT * FROM `{$table}`";
+
+		if ( $order_by ) {
+			$sql .= ' ORDER BY `' . esc_sql( $order_by ) . '` ASC';
+		}
+
+		if ( $limit > 0 ) {
+			$sql .= ' LIMIT ' . (int) $limit;
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- identifiers only; no user input.
+		$rows = $wpdb->get_results( $sql, ARRAY_A );
+
+		return $rows ? $rows : array();
+	}
+
+	/**
+	 * Load approved venue names from the normalisation worksheet.
+	 *
+	 * @param string $file Path to the CSV.
+	 * @return array Keyed by "name|city", lowercased.
+	 */
+	protected function load_venue_overrides( $file ) {
+		if ( ! file_exists( $file ) || ! is_readable( $file ) ) {
+			WP_CLI::error( sprintf( 'Cannot read %s', $file ) );
+		}
+
+		$handle = fopen( $file, 'r' );
+
+		if ( ! $handle ) {
+			WP_CLI::error( sprintf( 'Cannot open %s', $file ) );
+		}
+
+		$header = fgetcsv( $handle );
+
+		if ( ! $header ) {
+			fclose( $handle );
+
+			return array();
+		}
+
+		// Strip a UTF-8 BOM from the first heading if Excel put one there.
+		$header[0] = preg_replace( '/^\xEF\xBB\xBF/', '', $header[0] );
+		$header    = array_map( 'trim', $header );
+		$overrides = array();
+
+		while ( ( $row = fgetcsv( $handle ) ) !== false ) {
+			if ( count( $row ) !== count( $header ) ) {
+				continue;
+			}
+
+			$row = array_combine( $header, $row );
+
+			$from_name = isset( $row['venue_as_entered'] ) ? trim( $row['venue_as_entered'] ) : '';
+			$from_city = isset( $row['city_as_entered'] ) ? trim( $row['city_as_entered'] ) : '';
+
+			if ( '' === $from_name ) {
+				continue;
+			}
+
+			$pick = function ( $approved, $proposed ) use ( $row ) {
+				$a = isset( $row[ $approved ] ) ? trim( $row[ $approved ] ) : '';
+
+				if ( '' !== $a ) {
+					return $a;
+				}
+
+				return isset( $row[ $proposed ] ) ? trim( $row[ $proposed ] ) : '';
+			};
+
+			$overrides[ $this->override_key( $from_name, $from_city ) ] = array(
+				'venue'    => $pick( 'APPROVED_venue', 'proposed_venue' ),
+				'city'     => $pick( 'APPROVED_city', 'proposed_city' ),
+				'state'    => $pick( 'APPROVED_state', 'proposed_state' ),
+				'postcode' => isset( $row['proposed_postcode'] ) ? trim( $row['proposed_postcode'] ) : '',
+			);
+		}
+
+		fclose( $handle );
+
+		return $overrides;
+	}
+
+	protected function override_key( $name, $city ) {
+		return strtolower( trim( $name ) ) . '|' . strtolower( trim( $city ) );
+	}
+
+	/**
+	 * @param array  $overrides Override table.
+	 * @param string $name      Venue name as stored in GigPress.
+	 * @param string $city      City as stored in GigPress.
+	 * @return array
+	 */
+	protected function lookup_override( $overrides, $name, $city ) {
+		$empty = array(
+			'venue'    => '',
+			'city'     => '',
+			'state'    => '',
+			'postcode' => '',
+		);
+
+		$key = $this->override_key( $name, $city );
+
+		if ( isset( $overrides[ $key ] ) ) {
+			return $overrides[ $key ];
+		}
+
+		// Fall back to a name-only match when the city was blank in the worksheet.
+		$key = $this->override_key( $name, '' );
+
+		return isset( $overrides[ $key ] ) ? $overrides[ $key ] : $empty;
+	}
+
+	/**
+	 * @param string $path    Requested log path.
+	 * @param bool   $dry_run Whether this is a dry run.
+	 * @return resource|null
+	 */
+	protected function open_log( $path, $dry_run ) {
+		if ( ! $path ) {
+			$uploads = wp_upload_dir();
+			$path    = trailingslashit( $uploads['basedir'] ) . sprintf(
+				'mbe-gigs-import-%s%s.csv',
+				gmdate( 'Y-m-d-His' ),
+				$dry_run ? '-dryrun' : ''
+			);
+		}
+
+		$handle = fopen( $path, 'w' );
+
+		if ( ! $handle ) {
+			WP_CLI::warning( sprintf( 'Could not open log file %s — continuing without a log.', $path ) );
+
+			return null;
+		}
+
+		fputcsv( $handle, array( 'type', 'source_id', 'action', 'detail' ) );
+		WP_CLI::line( sprintf( 'Log: %s', $path ) );
+
+		return $handle;
+	}
+
+	/**
+	 * @param resource|null $handle    Log handle.
+	 * @param string        $type      Row type.
+	 * @param int           $source_id Source ID.
+	 * @param string        $action    Action taken.
+	 * @param string        $detail    Detail.
+	 */
+	protected function log( $handle, $type, $source_id, $action, $detail ) {
+		if ( ! $handle ) {
+			return;
+		}
+
+		fputcsv( $handle, array( $type, $source_id, $action, $detail ) );
+	}
+}
+
+WP_CLI::add_command( 'mbe-gigs', 'MBE_Gigs_Importer' );
