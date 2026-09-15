@@ -35,15 +35,20 @@ class MBE_Gigs_Shortcode {
 	public static function render( $atts ) {
 		$atts = shortcode_atts(
 			array(
-				'direction'   => 'upcoming',
-				'limit'       => -1,
-				'order'       => '',
-				'venue'       => '',
-				'artist'      => '',
-				'show_artist' => 'auto',
-				'date_format' => '',
-				'empty'       => __( 'No gigs listed at the moment.', 'mbe-gigs' ),
-				'class'       => '',
+				'direction'     => 'upcoming',
+				'limit'         => -1,
+				'order'         => '',
+				'venue'         => '',
+				'artist'        => '',
+				'show_artist'   => 'auto',
+				'group_by_tour' => 'yes',
+				'tour_label'    => __( 'Tour:', 'mbe-gigs' ),
+				'venue_link'    => 'archive',
+				'map'           => 'yes',
+				'tickets_label' => __( 'Tickets', 'mbe-gigs' ),
+				'date_format'   => '',
+				'empty'         => __( 'No gigs listed at the moment.', 'mbe-gigs' ),
+				'class'         => '',
 			),
 			$atts,
 			'mbe_gigs'
@@ -76,13 +81,39 @@ class MBE_Gigs_Shortcode {
 		}
 
 		$show_artist = self::show_artist( $atts['show_artist'] );
+		$group_tours = 'no' !== $atts['group_by_tour'];
 
 		$out  = sprintf( '<div class="%s">', esc_attr( implode( ' ', $classes ) ) );
 		$out .= '<ul class="mbe-gigs__list">';
 
+		/*
+		 * Tours break on change rather than being sorted together — walk the list in
+		 * date order and start a new heading whenever the tour differs from the last
+		 * row. A run of tour dates groups under one heading; a one-off in the middle
+		 * of them ends the run, which is what actually happened and what a reader
+		 * expects to see.
+		 */
+		$current_tour = '';
+
 		while ( $query->have_posts() ) {
 			$query->the_post();
-			$out .= self::render_gig( get_the_ID(), $show_artist, $atts['date_format'] );
+
+			$post_id = get_the_ID();
+			$tour    = (string) get_post_meta( $post_id, 'mbe_gig_tour', true );
+
+			if ( $group_tours && $tour !== $current_tour ) {
+				$current_tour = $tour;
+
+				if ( '' !== $tour ) {
+					$out .= sprintf(
+						'<li class="mbe-gigs__tour"><span class="mbe-gigs__tour-label">%s</span> <span class="mbe-gigs__tour-name">%s</span></li>',
+						esc_html( $atts['tour_label'] ),
+						esc_html( $tour )
+					);
+				}
+			}
+
+			$out .= self::render_gig( $post_id, $show_artist, $atts, $group_tours && '' !== $tour );
 		}
 
 		$out .= '</ul></div>';
@@ -125,12 +156,13 @@ class MBE_Gigs_Shortcode {
 	/**
 	 * One gig.
 	 *
-	 * @param int    $post_id     Post ID.
-	 * @param bool   $show_artist Whether to print the artist.
-	 * @param string $date_format Optional date format override.
+	 * @param int   $post_id     Post ID.
+	 * @param bool  $show_artist Whether to print the artist.
+	 * @param array $atts        Shortcode attributes.
+	 * @param bool  $in_tour     Whether a tour heading above already names this gig's tour.
 	 * @return string
 	 */
-	protected static function render_gig( $post_id, $show_artist, $date_format ) {
+	protected static function render_gig( $post_id, $show_artist, $atts, $in_tour = false ) {
 		$date   = (string) get_post_meta( $post_id, 'mbe_gig_date', true );
 		$end    = (string) get_post_meta( $post_id, 'mbe_gig_end_date', true );
 		$status = (string) get_post_meta( $post_id, 'mbe_gig_status', true );
@@ -142,9 +174,13 @@ class MBE_Gigs_Shortcode {
 			$classes[] = 'mbe-gig--multi-day';
 		}
 
+		if ( $in_tour ) {
+			$classes[] = 'mbe-gig--in-tour';
+		}
+
 		$out = sprintf( '<li class="%s">', esc_attr( implode( ' ', $classes ) ) );
 
-		$out .= self::date_block( $date, $end, $date_format );
+		$out .= self::date_block( $date, $end, $atts['date_format'] );
 
 		$out .= '<div class="mbe-gig__details">';
 
@@ -159,14 +195,7 @@ class MBE_Gigs_Shortcode {
 		$venue = MBE_Gigs_Query::get_venue( $post_id );
 
 		if ( $venue ) {
-			$name = esc_html( $venue->name );
-			$link = MBE_Gigs_Post_Type::archives_enabled( MBE_GIGS_TAX_VENUE ) ? get_term_link( $venue ) : '';
-
-			if ( $link && ! is_wp_error( $link ) ) {
-				$name = sprintf( '<a href="%s">%s</a>', esc_url( $link ), $name );
-			}
-
-			$out .= sprintf( '<p class="mbe-gig__venue">%s</p>', $name ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			$out .= sprintf( '<p class="mbe-gig__venue">%s</p>', self::venue_name( $venue, $atts['venue_link'] ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 
 			$city  = (string) get_term_meta( $venue->term_id, 'mbe_venue_city', true );
 			$state = (string) get_term_meta( $venue->term_id, 'mbe_venue_state', true );
@@ -180,19 +209,28 @@ class MBE_Gigs_Shortcode {
 		$time = MBE_Gigs_Query::get_time( $post_id );
 
 		if ( '' !== $time ) {
-			$out .= sprintf( '<p class="mbe-gig__time">%s</p>', esc_html( $time ) );
+			$out .= self::detail( 'time', __( 'Time', 'mbe-gigs' ), esc_html( $time ) );
 		}
 
+		// The tour is on the heading above when grouping is on, so don't repeat it.
 		$tour = (string) get_post_meta( $post_id, 'mbe_gig_tour', true );
 
-		if ( '' !== $tour ) {
-			$out .= sprintf( '<p class="mbe-gig__tour">%s</p>', esc_html( $tour ) );
+		if ( '' !== $tour && ! $in_tour ) {
+			$out .= self::detail( 'tour', __( 'Tour', 'mbe-gigs' ), esc_html( $tour ) );
 		}
 
 		$price = (string) get_post_meta( $post_id, 'mbe_gig_price', true );
 
 		if ( '' !== $price ) {
-			$out .= sprintf( '<p class="mbe-gig__price">%s</p>', esc_html( $price ) );
+			$out .= self::detail( 'price', __( 'Admission', 'mbe-gigs' ), esc_html( $price ) );
+		}
+
+		if ( $venue ) {
+			$address = self::address( $venue, 'no' !== $atts['map'] );
+
+			if ( '' !== $address ) {
+				$out .= self::detail( 'address', __( 'Address', 'mbe-gigs' ), $address );
+			}
 		}
 
 		if ( 'scheduled' !== $status ) {
@@ -221,13 +259,113 @@ class MBE_Gigs_Shortcode {
 			$out .= sprintf(
 				'<p class="mbe-gig__actions"><a class="mbe-gig__tickets" href="%s" rel="noopener">%s</a></p>',
 				esc_url( $tickets ),
-				esc_html__( 'Tickets', 'mbe-gigs' )
+				esc_html( $atts['tickets_label'] )
 			);
 		}
 
 		$out .= '</li>';
 
 		return $out;
+	}
+
+	/**
+	 * One labelled detail line.
+	 *
+	 * The label ships in the markup and is hidden by the starter CSS. It costs a span,
+	 * it reads correctly in a screen reader, and a site that wants GigPress's old
+	 * "Time: 8:30pm. Address: …" style gets it with one CSS rule instead of a
+	 * different shortcode.
+	 *
+	 * @param string $key   Element key.
+	 * @param string $label Human label.
+	 * @param string $value Already-escaped value.
+	 * @return string
+	 */
+	protected static function detail( $key, $label, $value ) {
+		return sprintf(
+			'<p class="mbe-gig__%1$s"><span class="mbe-gig__label">%2$s</span> <span class="mbe-gig__value">%3$s</span></p>',
+			esc_attr( $key ),
+			esc_html( $label ),
+			$value // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
+		);
+	}
+
+	/**
+	 * The venue name, linked according to the `venue_link` attribute.
+	 *
+	 * GigPress linked the venue to the venue's own website, which sends a visitor off
+	 * the band's site. The default here is the venue archive instead — every gig ever
+	 * played there — with the old behaviour available for sites that preferred it.
+	 *
+	 * @param WP_Term $venue Venue term.
+	 * @param string  $mode  archive, website or none.
+	 * @return string
+	 */
+	protected static function venue_name( $venue, $mode ) {
+		$name = esc_html( $venue->name );
+
+		if ( 'none' === $mode ) {
+			return $name;
+		}
+
+		if ( 'website' === $mode ) {
+			$url = (string) get_term_meta( $venue->term_id, 'mbe_venue_url', true );
+
+			return $url
+				? sprintf( '<a href="%s" rel="noopener">%s</a>', esc_url( $url ), $name )
+				: $name;
+		}
+
+		if ( ! MBE_Gigs_Post_Type::archives_enabled( MBE_GIGS_TAX_VENUE ) ) {
+			return $name;
+		}
+
+		$link = get_term_link( $venue );
+
+		return ( $link && ! is_wp_error( $link ) )
+			? sprintf( '<a href="%s">%s</a>', esc_url( $link ), $name )
+			: $name;
+	}
+
+	/**
+	 * The venue's street address, optionally linked to a map.
+	 *
+	 * Only the street address is the link text; the city, state, postcode and country
+	 * go into the map query so the pin lands in the right town. A venue with no street
+	 * address returns nothing rather than a map of the suburb.
+	 *
+	 * @param WP_Term $venue Venue term.
+	 * @param bool    $map   Whether to link to a map.
+	 * @return string
+	 */
+	protected static function address( $venue, $map ) {
+		$address = (string) get_term_meta( $venue->term_id, 'mbe_venue_address', true );
+
+		if ( '' === trim( $address ) ) {
+			return '';
+		}
+
+		if ( ! $map ) {
+			return esc_html( $address );
+		}
+
+		$parts = array( $address );
+
+		foreach ( array( 'mbe_venue_city', 'mbe_venue_state', 'mbe_venue_postcode', 'mbe_venue_country' ) as $key ) {
+			$value = (string) get_term_meta( $venue->term_id, $key, true );
+
+			if ( '' !== trim( $value ) ) {
+				$parts[] = $value;
+			}
+		}
+
+		$url = 'https://maps.google.com/maps?q=' . rawurlencode( implode( ', ', $parts ) );
+
+		return sprintf(
+			'<a class="mbe-gig__map" href="%s" rel="noopener">%s</a>',
+			esc_url( $url ),
+			esc_html( $address )
+		);
 	}
 
 	/**

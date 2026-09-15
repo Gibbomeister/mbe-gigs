@@ -147,6 +147,11 @@ Flush permalinks after changing any slug or archive filter: **Settings → Perma
 | `venue` | — | Venue slug or term ID |
 | `artist` | — | Artist slug or term ID |
 | `show_artist` | `auto` | `auto` prints the artist only on sites with more than one |
+| `group_by_tour` | `yes` | Heading above each run of gigs on the same tour |
+| `tour_label` | `Tour:` | Prefix on that heading |
+| `venue_link` | `archive` | `archive`, `website` or `none` |
+| `map` | `yes` | Link the address to Google Maps |
+| `tickets_label` | `Tickets` | Text on the ticket link |
 | `date_format` | site setting | Any PHP date format |
 | `empty` | — | Message when there are no gigs |
 | `class` | — | Extra class on the wrapper |
@@ -164,7 +169,10 @@ stylesheet has to hide an empty element.
 ```
 div.mbe-gigs.mbe-gigs--upcoming
   ul.mbe-gigs__list
-    li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --multi-day)
+    li.mbe-gigs__tour                        (above each run of gigs on one tour)
+      span.mbe-gigs__tour-label  Tour:
+      span.mbe-gigs__tour-name
+    li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --multi-day, --in-tour)
       div.mbe-gig__dates
         time.mbe-gig__date
           span.mbe-gig__weekday  Thu
@@ -177,9 +185,11 @@ div.mbe-gigs.mbe-gigs--upcoming
         p.mbe-gig__artist                    (multi-artist sites only)
         p.mbe-gig__venue                     (linked when archives are on)
         p.mbe-gig__location
-        p.mbe-gig__time
-        p.mbe-gig__tour
-        p.mbe-gig__price
+        p.mbe-gig__time                      (each detail holds
+        p.mbe-gig__tour                       span.mbe-gig__label +
+        p.mbe-gig__price                      span.mbe-gig__value)
+        p.mbe-gig__address
+          a.mbe-gig__map
         p.mbe-gig__status                    (only when not scheduled)
         div.mbe-gig__description
       p.mbe-gig__actions
@@ -208,6 +218,14 @@ Starter CSS to paste into the Themer layout's CSS panel and then make your own:
 
 /* Past gigs span years, so the year earns its place there. */
 .mbe-gigs--past .mbe-gig__year { display: block; font-size: .75rem; opacity: .7; }
+
+/* Tour heading above a run of dates. */
+.mbe-gigs__tour { padding: .6rem 0 .2rem; font-weight: 700; }
+.mbe-gigs__tour-label { opacity: .6; font-weight: 400; }
+
+/* Labels ship in the markup and are hidden by default. Delete this rule for
+   GigPress's old "Time: 8:30pm. Address: ..." look. */
+.mbe-gig__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .mbe-gig__details { flex: 1 1 auto; }
 .mbe-gig__venue { font-size: 1.1rem; font-weight: 600; margin: 0; }
 .mbe-gig__location, .mbe-gig__time, .mbe-gig__tour, .mbe-gig__price { margin: .15rem 0 0; opacity: .8; }
