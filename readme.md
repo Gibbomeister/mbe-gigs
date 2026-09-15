@@ -217,16 +217,19 @@ time, address, notes and tickets share one line underneath.
 ```css
 .mbe-gigs__list { list-style: none; margin: 0; padding: 0;
     display: grid; grid-template-columns: max-content max-content 1fr;
-    column-gap: 1.5rem; align-items: baseline; }
+    align-items: baseline; }
 .mbe-gigs--with-artist .mbe-gigs__list {
     grid-template-columns: max-content max-content max-content 1fr; }
 
 /* Rows dissolve so their cells become the grid's own children. */
 .mbe-gig { display: contents; }
+
+/* Column spacing is padding, not column-gap. A gap cannot be painted, and the
+   tour banding below needs a continuous band across the row. */
 .mbe-gig__dates, .mbe-gig__artist, .mbe-gig__location, .mbe-gig__venue {
-    margin: 0; padding: .6rem 0 0; }
+    margin: 0; padding: .6rem 1.5rem .1rem 0; }
 .mbe-gig__dates { white-space: nowrap; }
-.mbe-gig__venue { font-weight: 600; }
+.mbe-gig__venue { font-weight: 600; padding-right: .75rem; }
 
 /* One line per date rather than a calendar tile. */
 .mbe-gig__weekday, .mbe-gig__day, .mbe-gig__month, .mbe-gig__year { display: none; }
@@ -234,7 +237,7 @@ time, address, notes and tickets share one line underneath.
 .mbe-gig__end-date::before { content: " – "; }
 
 /* The secondary line, spanning every column. */
-.mbe-gig__extra { grid-column: 1 / -1; margin: 0; padding: .1rem 0 .6rem;
+.mbe-gig__extra { grid-column: 1 / -1; margin: 0; padding: .1rem .75rem .6rem 0;
     font-size: .92em; opacity: .85;
     border-bottom: 1px solid rgba(0,0,0,.08); }
 .mbe-gig__extra > * { margin-right: .5rem; }
@@ -242,8 +245,13 @@ time, address, notes and tickets share one line underneath.
 .mbe-gig__extra > span::after { content: "."; }
 .mbe-gig__tickets { font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 
-.mbe-gigs__tour { grid-column: 1 / -1; margin: 0; padding: 1rem 0 .3rem; font-weight: 700; }
+/* Tours: a heading band, and a tint on the dates it covers. */
+.mbe-gigs__tour { grid-column: 1 / -1; margin: 0; padding: .7rem .75rem .55rem;
+    font-weight: 700; background: #e8e8ec; }
 .mbe-gigs__tour-label { opacity: .6; font-weight: 400; }
+.mbe-gig--in-tour > * { background: #f5f5f8; }
+.mbe-gig--in-tour > :first-child { padding-left: .75rem; }
+.mbe-gig--in-tour > .mbe-gig__extra { padding-left: .75rem; }
 
 .mbe-gig--cancelled .mbe-gig__venue { text-decoration: line-through; }
 .mbe-gigs--past .mbe-gig__extra { opacity: .7; }
@@ -253,8 +261,15 @@ time, address, notes and tickets share one line underneath.
     .mbe-gigs__list, .mbe-gigs--with-artist .mbe-gigs__list { grid-template-columns: 1fr; }
     .mbe-gig__dates, .mbe-gig__artist, .mbe-gig__location, .mbe-gig__venue { padding-top: 0; }
     .mbe-gig__dates { padding-top: .8rem; font-weight: 600; }
+    .mbe-gig--in-tour > :first-child,
+    .mbe-gig--in-tour > * { padding-left: .75rem; }
 }
 ```
+
+The tour tint has to be painted on the cells rather than the row: `display: contents`
+removes the row's own box, so `.mbe-gig--in-tour { background: … }` would do nothing at
+all. That is also why the columns are spaced with padding instead of `column-gap` — a
+gap has no background to set, so a banded row would come out striped.
 
 To drop the labels — "8:30 pm" rather than "Time: 8:30 pm" — remove the
 `.mbe-gig__label::after` rule and hide the labels instead:
