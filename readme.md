@@ -102,7 +102,13 @@ Drop these in a one-line mu-plugin, not in a child theme.
 
 ```php
 // This site's gig archive lists past gigs instead of upcoming.
-add_filter( 'mbe_gigs_archive_direction', function () { return 'past'; } );
+// Defaults: 'upcoming' on the gig archive, 'all' on venue and artist archives.
+add_filter( 'mbe_gigs_archive_direction', function ( $direction, $query ) {
+    return $query->is_post_type_archive( 'mbe_gig' ) ? 'past' : $direction;
+}, 10, 2 );
+
+// Override the order an archive uses ('ASC' or 'DESC').
+add_filter( 'mbe_gigs_archive_order', function () { return 'ASC'; } );
 
 // Beaver Builder Posts modules querying gigs show past gigs.
 add_filter( 'mbe_gigs_loop_direction', function () { return 'past'; }, 10, 2 );

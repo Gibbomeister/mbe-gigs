@@ -67,8 +67,12 @@ class MBE_Gigs_Query {
 		$order = strtoupper( $args['order'] );
 
 		if ( ! in_array( $order, array( 'ASC', 'DESC' ), true ) ) {
-			// Upcoming reads forwards from today; past reads backwards from today.
-			$order = ( 'past' === $direction ) ? 'DESC' : 'ASC';
+			/*
+			 * Upcoming reads forwards from today. Past and "all" read backwards, so a
+			 * mixed list opens with the next gig and then works back through the
+			 * history rather than starting in 1992.
+			 */
+			$order = ( 'upcoming' === $direction ) ? 'ASC' : 'DESC';
 		}
 
 		$query = array(
@@ -278,22 +282,33 @@ class MBE_Gigs_Query {
 			return;
 		}
 
-		$is_gig_archive = $query->is_post_type_archive( MBE_GIGS_CPT )
-			|| $query->is_tax( MBE_GIGS_TAX_VENUE )
-			|| $query->is_tax( MBE_GIGS_TAX_ARTIST );
+		$is_term_archive = $query->is_tax( MBE_GIGS_TAX_VENUE ) || $query->is_tax( MBE_GIGS_TAX_ARTIST );
 
-		if ( ! $is_gig_archive ) {
+		if ( ! $query->is_post_type_archive( MBE_GIGS_CPT ) && ! $is_term_archive ) {
 			return;
 		}
 
-		$direction = apply_filters( 'mbe_gigs_archive_direction', 'upcoming', $query );
+		/*
+		 * The gig archive is a "what's on" page, so it shows what's coming.
+		 *
+		 * A venue or artist archive is a different question — it's "this place" or
+		 * "this act", and the answer is their whole history. Filtering those to
+		 * upcoming gigs too meant every venue without a future booking rendered an
+		 * empty page, which is most of them: one site here has 35 venues and two
+		 * future dates.
+		 */
+		$default   = $is_term_archive ? 'all' : 'upcoming';
+		$direction = apply_filters( 'mbe_gigs_archive_direction', $default, $query );
 
 		if ( ! in_array( $direction, array( 'upcoming', 'past', 'all' ), true ) ) {
 			return;
 		}
 
 		$today = mbe_gigs_today();
-		$order = ( 'past' === $direction ) ? 'DESC' : 'ASC';
+
+		// Upcoming reads forwards. Everything else reads back from the next gig.
+		$order = ( 'upcoming' === $direction ) ? 'ASC' : 'DESC';
+		$order = apply_filters( 'mbe_gigs_archive_order', $order, $direction, $query );
 
 		$query->set( 'meta_query', self::meta_query( $direction, $today ) );
 		$query->set(
