@@ -167,11 +167,11 @@ deactivating GigPress and leaving its tables in place.
 
 ### Verify on the first site before trusting it anywhere
 
-1. `wp mbe-gigs inspect` — confirm the end-date column. GigPress's export calls it "End
-   date" but the underlying column is likely `show_expire`, which in some versions is a
-   *drop-off* date rather than a festival end date. If it is, remove `show_expire` from
-   the `end_date` candidates in `class-importer.php` and set the handful of multi-day
-   events by hand.
+1. `wp mbe-gigs inspect` — read the column mapping and the end-date line. GigPress
+   writes `show_expire = show_date` for an ordinary gig and a later date only for a
+   genuine multi-day event, so the reported count of shows ending after they start
+   should be a handful. If it's most of the table, that install treats `show_expire` as
+   a drop-off date and the mapping needs removing for that site.
 2. `wp mbe-gigs import --dry-run --limit=20`, read the log.
 3. Import for real, then check: a gig next month is visible on the front end and is
    *not* in "Scheduled" post status; a cancelled gig still displays; a gig with no time

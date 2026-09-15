@@ -111,12 +111,14 @@ This is the part a blank site can't fake. You need actual GigPress tables.
 - [ ] Every expected table is present with a sensible row count.
 - [ ] **The column mapping.** Any role showing `(none)` will not import — decide now
       whether that matters.
-- [ ] **`end_date` → `show_expire` is the one to interrogate.** GigPress's own export
-      labels that column "End date", but in some versions `show_expire` is a *drop-off*
-      date — when a show stops being listed — rather than when a festival ends. Check it
-      against the multi-day gig you already know about from the audit. If the value looks
-      like a drop-off date, remove `show_expire` from the `end_date` candidates in
-      `includes/class-importer.php` and set the handful of real multi-day events by hand.
+- [ ] **The end-date line.** `inspect` reports how many shows end after they start.
+      GigPress writes `show_expire = show_date` for an ordinary gig and a later date
+      only for a genuine multi-day event, so that count should match the number of
+      festivals you'd expect — a handful, not the whole table. Verified on
+      tedmulrygang: 46 of 47 equal, 1 later, and that one row is the only one with
+      `show_multi` set. If a site ever reports nearly every show ending after it
+      starts, stop: that install is using `show_expire` as a drop-off date and the
+      mapping needs removing for that site.
 
 ### Dry run
 

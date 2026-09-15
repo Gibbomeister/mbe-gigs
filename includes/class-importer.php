@@ -35,20 +35,54 @@ class MBE_Gigs_Importer {
 	const VENUE_MAP    = 'mbe_gigs_venue_map';
 	const SOURCE_TERM  = 'mbe_gigs_source_venue_id';
 
-	/** @var array Candidate column names, best first. */
+	/**
+	 * Candidate column names, best first.
+	 *
+	 * Verified against a real GigPress 2.x install (tedmulrygang, Sep 2026). The
+	 * shows table prefixes almost everything with `show_`, including the foreign
+	 * keys — `show_venue_id`, not `venue_id`. The older, unprefixed spellings are
+	 * kept as fallbacks in case an install from a different era turns up.
+	 *
+	 * @var array
+	 */
 	protected $show_columns = array(
 		'id'       => array( 'show_id', 'id' ),
-		'venue'    => array( 'venue_id' ),
-		'artist'   => array( 'artist_id' ),
+		'venue'    => array( 'show_venue_id', 'venue_id' ),
+		'artist'   => array( 'show_artist_id', 'artist_id' ),
 		'date'     => array( 'show_date', 'date' ),
 		'time'     => array( 'show_time', 'time' ),
 		'end_date' => array( 'show_expire', 'show_end_date', 'end_date' ),
+		'multi'    => array( 'show_multi' ),
 		'price'    => array( 'show_price', 'price' ),
-		'tickets'  => array( 'show_tickets', 'tickets', 'show_ticket_url' ),
+		'tickets'  => array( 'show_tix_url', 'show_tickets', 'show_ticket_url' ),
 		'notes'    => array( 'show_notes', 'notes' ),
 		'status'   => array( 'show_status', 'status' ),
-		'tour'     => array( 'gig_id' ),
+		'tour'     => array( 'show_tour_id', 'gig_id' ),
 	);
+
+	/**
+	 * Venue detail stored on the show row itself.
+	 *
+	 * GigPress keeps a venue snapshot on each show, which is what it falls back to
+	 * when a show has no venues-table entry. Without this, such a show would import
+	 * with no venue at all and nothing would say so.
+	 *
+	 * Note `show_locale` is the city — the shows table doesn't follow the venues
+	 * table's naming.
+	 *
+	 * @var array
+	 */
+	protected $show_venue_columns = array(
+		'name'    => array( 'show_venue' ),
+		'address' => array( 'show_address' ),
+		'city'    => array( 'show_locale' ),
+		'country' => array( 'show_country' ),
+		'url'     => array( 'show_venue_url' ),
+		'phone'   => array( 'show_venue_phone' ),
+	);
+
+	/** @var array Resolved show-row venue columns, set during import(). */
+	protected $map_show_venue = array();
 
 	protected $venue_columns = array(
 		'id'       => array( 'venue_id', 'id' ),
@@ -118,6 +152,43 @@ class MBE_Gigs_Importer {
 
 		foreach ( $map as $role => $column ) {
 			WP_CLI::line( sprintf( '  %-9s -> %s', $role, $column ? $column : '(none — will be skipped)' ) );
+		}
+
+		WP_CLI::line( '' );
+		WP_CLI::line( 'Venue detail on the show row (fallback when a show has no venue_id):' );
+
+		foreach ( $this->resolve_columns( $tables['shows'], $this->show_venue_columns ) as $role => $column ) {
+			WP_CLI::line( sprintf( '  %-9s -> %s', $role, $column ? $column : '(none)' ) );
+		}
+
+		/*
+		 * The end-date question. GigPress writes show_expire = show_date for an
+		 * ordinary gig and a later date for a genuine multi-day event, so an end date
+		 * that isn't after the start date is bookkeeping, not a festival. Worth
+		 * seeing the split per site before trusting it.
+		 */
+		if ( $map['end_date'] && $map['date'] ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- identifiers only.
+			$row = $wpdb->get_row(
+				sprintf(
+					'SELECT COUNT(*) AS total, SUM(`%1$s` > `%2$s`) AS multi FROM `%3$s`',
+					esc_sql( $map['end_date'] ),
+					esc_sql( $map['date'] ),
+					$tables['shows']
+				),
+				ARRAY_A
+			);
+
+			if ( $row ) {
+				WP_CLI::line( '' );
+				WP_CLI::line(
+					sprintf(
+						'End dates: %d of %d shows end after they start — those import as multi-day, the rest as single-day.',
+						(int) $row['multi'],
+						(int) $row['total']
+					)
+				);
+			}
 		}
 
 		$already = $this->imported_count();
@@ -194,8 +265,9 @@ class MBE_Gigs_Importer {
 		WP_CLI::line( sprintf( 'Artists: %d mapped', count( $artist_map ) ) );
 
 		// Pass two: shows.
-		$map   = $this->resolve_columns( $tables['shows'], $this->show_columns );
-		$shows = $this->fetch_rows( $tables['shows'], $map['date'], $limit );
+		$map                  = $this->resolve_columns( $tables['shows'], $this->show_columns );
+		$this->map_show_venue = $this->resolve_columns( $tables['shows'], $this->show_venue_columns );
+		$shows                = $this->fetch_rows( $tables['shows'], $map['date'], $limit );
 
 		$counts = array(
 			'created' => 0,
@@ -528,6 +600,11 @@ class MBE_Gigs_Importer {
 		$venue_term  = isset( $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] ) ? $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] : 0;
 		$artist_term = isset( $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] ) ? $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] : 0;
 
+		// No venues-table entry — fall back to the venue snapshot on the show itself.
+		if ( ! $venue_term ) {
+			$venue_term = $this->venue_from_show( $row, $source_id, $dry_run, $log );
+		}
+
 		$venue_name  = $this->term_name( $venue_term, MBE_GIGS_TAX_VENUE );
 		$artist_name = $this->term_name( $artist_term, MBE_GIGS_TAX_ARTIST );
 
@@ -592,8 +669,13 @@ class MBE_Gigs_Importer {
 			'mbe_gig_status'     => $this->map_status( $this->value( $row, $map, 'status' ) ),
 		);
 
-		// An end date equal to the start date is GigPress bookkeeping, not a festival.
-		if ( $meta['mbe_gig_end_date'] === $meta['mbe_gig_date'] ) {
+		/*
+		 * GigPress writes show_expire = show_date for an ordinary gig, and a later
+		 * date only for a genuine multi-day event. So an end date that isn't AFTER
+		 * the start date is bookkeeping and gets dropped — otherwise every gig would
+		 * look multi-day and the upcoming window would quietly go wrong.
+		 */
+		if ( '' !== $meta['mbe_gig_end_date'] && $meta['mbe_gig_end_date'] <= $meta['mbe_gig_date'] ) {
 			$meta['mbe_gig_end_date'] = '';
 		}
 
@@ -621,6 +703,82 @@ class MBE_Gigs_Importer {
 		$this->log( $log, 'gig', $source_id, $action, sprintf( 'post %d "%s"', $post_id, $title ) );
 
 		return $action;
+	}
+
+	/**
+	 * Build a venue term from the snapshot on the show row.
+	 *
+	 * Used when a show has no venues-table entry. Matched on name plus city like
+	 * every other venue, so a one-off venue that later appears in the venues table
+	 * lands on the same term rather than a duplicate.
+	 *
+	 * @param array         $row       Source row.
+	 * @param int           $source_id GigPress show ID, for the log.
+	 * @param bool          $dry_run   Whether to write.
+	 * @param resource|null $log       Log handle.
+	 * @return int Term ID, or 0.
+	 */
+	protected function venue_from_show( $row, $source_id, $dry_run, $log ) {
+		$map = $this->map_show_venue;
+
+		if ( empty( $map['name'] ) || empty( $row[ $map['name'] ] ) ) {
+			return 0;
+		}
+
+		$name = trim( (string) $row[ $map['name'] ] );
+
+		if ( '' === $name ) {
+			return 0;
+		}
+
+		$city    = ( ! empty( $map['city'] ) && isset( $row[ $map['city'] ] ) ) ? trim( (string) $row[ $map['city'] ] ) : '';
+		$term_id = $this->find_venue_term( $name, $city );
+
+		if ( $term_id ) {
+			return $term_id;
+		}
+
+		if ( $dry_run ) {
+			$this->log( $log, 'venue', $source_id, 'created', sprintf( 'would create "%s" (%s) from the show row', $name, $city ) );
+
+			return 0;
+		}
+
+		$created = wp_insert_term( $name, MBE_GIGS_TAX_VENUE );
+
+		if ( is_wp_error( $created ) ) {
+			$created = wp_insert_term(
+				$name,
+				MBE_GIGS_TAX_VENUE,
+				array( 'slug' => sanitize_title( $name . ' ' . $city ) )
+			);
+		}
+
+		if ( is_wp_error( $created ) ) {
+			$this->log( $log, 'venue', $source_id, 'failed', $created->get_error_message() );
+
+			return 0;
+		}
+
+		$term_id = (int) $created['term_id'];
+
+		$meta = array(
+			'mbe_venue_city'    => $city,
+			'mbe_venue_address' => ( ! empty( $map['address'] ) && isset( $row[ $map['address'] ] ) ) ? trim( (string) $row[ $map['address'] ] ) : '',
+			'mbe_venue_country' => ( ! empty( $map['country'] ) && isset( $row[ $map['country'] ] ) ) ? trim( (string) $row[ $map['country'] ] ) : '',
+			'mbe_venue_phone'   => ( ! empty( $map['phone'] ) && isset( $row[ $map['phone'] ] ) ) ? trim( (string) $row[ $map['phone'] ] ) : '',
+			'mbe_venue_url'     => ( ! empty( $map['url'] ) && isset( $row[ $map['url'] ] ) ) ? MBE_Gigs_Meta::sanitize_url( (string) $row[ $map['url'] ] ) : '',
+		);
+
+		foreach ( $meta as $key => $value ) {
+			if ( '' !== $value ) {
+				update_term_meta( $term_id, $key, $value );
+			}
+		}
+
+		$this->log( $log, 'venue', $source_id, 'created', sprintf( 'term %d "%s" from the show row', $term_id, $name ) );
+
+		return $term_id;
 	}
 
 	/**
