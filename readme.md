@@ -159,13 +159,14 @@ stylesheet has to hide an empty element.
 div.mbe-gigs.mbe-gigs--upcoming
   ul.mbe-gigs__list
     li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --multi-day)
-      time.mbe-gig__date
-        span.mbe-gig__weekday  Thu
-        span.mbe-gig__day      19
-        span.mbe-gig__month    Nov
-        span.mbe-gig__year     2026
-        span.mbe-gig__date-full
-      time.mbe-gig__end-date                 (multi-day only)
+      div.mbe-gig__dates
+        time.mbe-gig__date
+          span.mbe-gig__weekday  Thu
+          span.mbe-gig__day      19
+          span.mbe-gig__month    Nov
+          span.mbe-gig__year     2026
+          span.mbe-gig__date-full
+        time.mbe-gig__end-date               (multi-day only, same inner spans)
       div.mbe-gig__details
         p.mbe-gig__artist                    (multi-artist sites only)
         p.mbe-gig__venue                     (linked when archives are on)
@@ -188,11 +189,19 @@ Starter CSS to paste into the Themer layout's CSS panel and then make your own:
 .mbe-gigs__list { list-style: none; margin: 0; padding: 0; }
 .mbe-gig { display: flex; gap: 1.25rem; align-items: flex-start;
            padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,.1); }
-.mbe-gig__date { flex: 0 0 4.5rem; text-align: center; line-height: 1.1; }
+.mbe-gig__dates { flex: 0 0 4.5rem; text-align: center; line-height: 1.1; }
 .mbe-gig__weekday, .mbe-gig__month { display: block; font-size: .75rem;
            text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
 .mbe-gig__day { display: block; font-size: 1.9rem; font-weight: 700; }
 .mbe-gig__year, .mbe-gig__date-full { display: none; }
+
+/* Multi-day: a second tile under the first, with a dash between. */
+.mbe-gig__end-date { display: block; }
+.mbe-gig__end-date::before { content: "–"; display: block; opacity: .5; }
+.mbe-gig__end-date .mbe-gig__weekday { display: none; }
+
+/* Past gigs span years, so the year earns its place there. */
+.mbe-gigs--past .mbe-gig__year { display: block; font-size: .75rem; opacity: .7; }
 .mbe-gig__details { flex: 1 1 auto; }
 .mbe-gig__venue { font-size: 1.1rem; font-weight: 600; margin: 0; }
 .mbe-gig__location, .mbe-gig__time, .mbe-gig__tour, .mbe-gig__price { margin: .15rem 0 0; opacity: .8; }

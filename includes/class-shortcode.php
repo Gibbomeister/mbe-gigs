@@ -249,7 +249,14 @@ class MBE_Gigs_Shortcode {
 		$stamp  = strtotime( $date . ' 12:00:00' );
 		$format = $date_format ? $date_format : get_option( 'date_format' );
 
-		$out = sprintf( '<time class="mbe-gig__date" datetime="%s">', esc_attr( $date ) );
+		/*
+		 * Both dates live inside one wrapper so a multi-day gig doesn't become a third
+		 * column in whatever layout the site uses. The row is always: dates, details,
+		 * actions — however many dates there are.
+		 */
+		$out = '<div class="mbe-gig__dates">';
+
+		$out .= sprintf( '<time class="mbe-gig__date" datetime="%s">', esc_attr( $date ) );
 
 		$out .= sprintf( '<span class="mbe-gig__weekday">%s</span>', esc_html( date_i18n( 'D', $stamp ) ) );
 		$out .= sprintf( '<span class="mbe-gig__day">%s</span>', esc_html( date_i18n( 'j', $stamp ) ) );
@@ -262,12 +269,18 @@ class MBE_Gigs_Shortcode {
 		if ( '' !== $end ) {
 			$end_stamp = strtotime( $end . ' 12:00:00' );
 
-			$out .= sprintf(
-				'<time class="mbe-gig__end-date" datetime="%s">%s</time>',
-				esc_attr( $end ),
-				esc_html( date_i18n( $format, $end_stamp ) )
-			);
+			$out .= sprintf( '<time class="mbe-gig__end-date" datetime="%s">', esc_attr( $end ) );
+
+			$out .= sprintf( '<span class="mbe-gig__weekday">%s</span>', esc_html( date_i18n( 'D', $end_stamp ) ) );
+			$out .= sprintf( '<span class="mbe-gig__day">%s</span>', esc_html( date_i18n( 'j', $end_stamp ) ) );
+			$out .= sprintf( '<span class="mbe-gig__month">%s</span>', esc_html( date_i18n( 'M', $end_stamp ) ) );
+			$out .= sprintf( '<span class="mbe-gig__year">%s</span>', esc_html( date_i18n( 'Y', $end_stamp ) ) );
+			$out .= sprintf( '<span class="mbe-gig__date-full">%s</span>', esc_html( date_i18n( $format, $end_stamp ) ) );
+
+			$out .= '</time>';
 		}
+
+		$out .= '</div>';
 
 		return $out;
 	}

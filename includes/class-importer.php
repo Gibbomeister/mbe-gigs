@@ -695,6 +695,17 @@ class MBE_Gigs_Importer {
 		);
 
 		$notes = (string) $this->value( $row, $map, 'notes' );
+		$tour  = $this->tour_name( (int) $this->value( $row, $map, 'tour' ) );
+
+		/*
+		 * GigPress sites routinely carry the same text in the notes and the tour —
+		 * every Ted Mulry Gang date on the Final Blitz tour has "Final Blitz with
+		 * Sweet" in both. Imported faithfully that prints twice on every row, which
+		 * looks like a display bug and isn't.
+		 */
+		if ( '' !== $tour && 0 === strcasecmp( trim( wp_strip_all_tags( $notes ) ), $tour ) ) {
+			$notes = '';
+		}
 
 		if ( $dry_run ) {
 			$this->log( $log, 'gig', $source_id, 'created', sprintf( 'would create "%s"', $title ) );
@@ -737,7 +748,7 @@ class MBE_Gigs_Importer {
 			'mbe_gig_ticket_url' => MBE_Gigs_Meta::sanitize_url( $this->value( $row, $map, 'tickets' ) ),
 			'mbe_gig_price'      => sanitize_text_field( $this->value( $row, $map, 'price' ) ),
 			'mbe_gig_status'     => $this->map_status( $this->value( $row, $map, 'status' ) ),
-			'mbe_gig_tour'       => $this->tour_name( (int) $this->value( $row, $map, 'tour' ) ),
+			'mbe_gig_tour'       => $tour,
 		);
 
 		/*
