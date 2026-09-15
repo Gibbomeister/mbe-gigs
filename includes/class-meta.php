@@ -137,6 +137,74 @@ class MBE_Gigs_Meta {
 		add_filter( 'manage_' . MBE_GIGS_TAX_VENUE . '_custom_column', array( __CLASS__, 'venue_column_content' ), 10, 3 );
 
 		add_action( 'admin_head', array( __CLASS__, 'term_screen_tidy' ) );
+		add_action( 'admin_footer', array( __CLASS__, 'term_screen_description' ) );
+	}
+
+	/**
+	 * Move the description below the venue or artist fields, and say what it's for.
+	 *
+	 * Core prints name, slug, parent and description before the hook our fields use,
+	 * so out of the box a venue reads: name, description, then address and city. The
+	 * address belongs beside the name; the description is the afterthought and should
+	 * sit last. Core's own help text ("The description is not prominent by default")
+	 * describes WordPress rather than this site, which tells nobody anything useful.
+	 *
+	 * Done in the footer because it needs the markup to exist.
+	 */
+	public static function term_screen_description() {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( ! $screen || empty( $screen->taxonomy ) ) {
+			return;
+		}
+
+		if ( MBE_GIGS_TAX_VENUE === $screen->taxonomy ) {
+			$label = __( 'Notes about this venue', 'mbe-gigs' );
+		} elseif ( MBE_GIGS_TAX_ARTIST === $screen->taxonomy ) {
+			$label = __( 'Notes about this artist', 'mbe-gigs' );
+		} else {
+			return;
+		}
+
+		$help = __( 'Optional, and for your own reference — it only appears on the website if a layout has been set up to show it.', 'mbe-gigs' );
+		?>
+		<script>
+			( function () {
+				var field = document.querySelector( '.term-description-wrap' );
+
+				if ( ! field ) {
+					return;
+				}
+
+				if ( 'TR' === field.tagName ) {
+					// Edit screen: last row of the fields table.
+					field.parentNode.appendChild( field );
+				} else {
+					// Add screen: last field before the submit button.
+					var form   = field.closest( 'form' );
+					var submit = form ? form.querySelector( '.submit' ) : null;
+
+					if ( submit ) {
+						submit.parentNode.insertBefore( field, submit );
+					} else if ( form ) {
+						form.appendChild( field );
+					}
+				}
+
+				var label = field.querySelector( 'label' );
+
+				if ( label ) {
+					label.textContent = <?php echo wp_json_encode( $label ); ?>;
+				}
+
+				var help = field.querySelector( 'p' );
+
+				if ( help ) {
+					help.textContent = <?php echo wp_json_encode( $help ); ?>;
+				}
+			}() );
+		</script>
+		<?php
 	}
 
 	/**
