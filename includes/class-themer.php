@@ -40,6 +40,7 @@ class MBE_Gigs_Themer {
 			'mbe_gig_time'       => __( 'Gig: time', 'mbe-gigs' ),
 			'mbe_gig_end_date'   => __( 'Gig: end date', 'mbe-gigs' ),
 			'mbe_gig_price'      => __( 'Gig: price', 'mbe-gigs' ),
+			'mbe_gig_tour'       => __( 'Gig: tour', 'mbe-gigs' ),
 			'mbe_gig_status'     => __( 'Gig: status', 'mbe-gigs' ),
 			'mbe_gig_venue'      => __( 'Gig: venue name', 'mbe-gigs' ),
 			'mbe_gig_venue_line' => __( 'Gig: venue and location', 'mbe-gigs' ),

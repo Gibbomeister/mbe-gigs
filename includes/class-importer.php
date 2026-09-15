@@ -84,6 +84,9 @@ class MBE_Gigs_Importer {
 	/** @var array Resolved show-row venue columns, set during import(). */
 	protected $map_show_venue = array();
 
+	/** @var array GigPress tour ID => tour name, set during import(). */
+	protected $tour_map = array();
+
 	protected $venue_columns = array(
 		'id'       => array( 'venue_id', 'id' ),
 		'name'     => array( 'venue_name', 'name' ),
@@ -100,6 +103,11 @@ class MBE_Gigs_Importer {
 		'id'   => array( 'artist_id', 'id' ),
 		'name' => array( 'artist_name', 'name' ),
 		'url'  => array( 'artist_url', 'url' ),
+	);
+
+	protected $tour_columns = array(
+		'id'   => array( 'tour_id', 'id' ),
+		'name' => array( 'tour_name', 'name' ),
 	);
 
 	/**
@@ -263,6 +271,10 @@ class MBE_Gigs_Importer {
 
 		$artist_map = $this->import_artists( $tables['artists'], $dry_run, $log );
 		WP_CLI::line( sprintf( 'Artists: %d mapped', count( $artist_map ) ) );
+
+		// Tours are carried as a plain name on the gig, not as terms of their own.
+		$this->tour_map = $this->load_tours( $tables['tours'] );
+		WP_CLI::line( sprintf( 'Tours: %d loaded', count( $this->tour_map ) ) );
 
 		// Pass two: shows.
 		$map                  = $this->resolve_columns( $tables['shows'], $this->show_columns );
@@ -667,6 +679,7 @@ class MBE_Gigs_Importer {
 			'mbe_gig_ticket_url' => MBE_Gigs_Meta::sanitize_url( $this->value( $row, $map, 'tickets' ) ),
 			'mbe_gig_price'      => sanitize_text_field( $this->value( $row, $map, 'price' ) ),
 			'mbe_gig_status'     => $this->map_status( $this->value( $row, $map, 'status' ) ),
+			'mbe_gig_tour'       => $this->tour_name( (int) $this->value( $row, $map, 'tour' ) ),
 		);
 
 		/*
@@ -703,6 +716,39 @@ class MBE_Gigs_Importer {
 		$this->log( $log, 'gig', $source_id, $action, sprintf( 'post %d "%s"', $post_id, $title ) );
 
 		return $action;
+	}
+
+	/**
+	 * Load tour names.
+	 *
+	 * Tours are a name on the gig rather than a taxonomy — 7 of them across the whole
+	 * portfolio doesn't justify archive pages, and a text field is one line to remove
+	 * if it turns out nobody wants it.
+	 *
+	 * @param string $table Tours table.
+	 * @return array GigPress tour ID => name.
+	 */
+	protected function load_tours( $table ) {
+		if ( ! $this->table_exists( $table ) ) {
+			return array();
+		}
+
+		$map    = $this->resolve_columns( $table, $this->tour_columns );
+		$result = array();
+
+		if ( empty( $map['id'] ) || empty( $map['name'] ) ) {
+			return $result;
+		}
+
+		foreach ( $this->fetch_rows( $table, $map['name'], 0 ) as $row ) {
+			$name = trim( (string) $row[ $map['name'] ] );
+
+			if ( '' !== $name ) {
+				$result[ (int) $row[ $map['id'] ] ] = $name;
+			}
+		}
+
+		return $result;
 	}
 
 	/**
@@ -840,6 +886,14 @@ class MBE_Gigs_Importer {
 	}
 
 	/**
+	 * @param int $tour_id GigPress tour ID, 0 for none.
+	 * @return string
+	 */
+	protected function tour_name( $tour_id ) {
+		return ( $tour_id && isset( $this->tour_map[ $tour_id ] ) ) ? $this->tour_map[ $tour_id ] : '';
+	}
+
+	/**
 	 * @param string $status GigPress status.
 	 * @return string
 	 */
@@ -868,6 +922,7 @@ class MBE_Gigs_Importer {
 			'shows'   => $wpdb->prefix . 'gigpress_shows',
 			'venues'  => $wpdb->prefix . 'gigpress_venues',
 			'artists' => $wpdb->prefix . 'gigpress_artists',
+			'tours'   => $wpdb->prefix . 'gigpress_tours',
 		);
 	}
 

@@ -42,6 +42,7 @@ you rebuild the display and the content is untouched.
 | `mbe_gig_ticket_url` | URL | |
 | `mbe_gig_price` | text | Free text — "$25", "Free entry". |
 | `mbe_gig_status` | `scheduled` / `cancelled` / `postponed` | |
+| `mbe_gig_tour` | text | The tour or billing, e.g. "Final Blitz with Sweet". A name, not a taxonomy. |
 
 **Venue term meta:** `mbe_venue_address`, `_city`, `_state`, `_postcode`, `_country`,
 `_phone`, `_url`, `_capacity`.

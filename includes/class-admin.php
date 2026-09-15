@@ -147,6 +147,16 @@ class MBE_Gigs_Admin {
 		);
 
 		self::field_row(
+			'mbe_gig_tour',
+			$fields['mbe_gig_tour']['label'],
+			sprintf(
+				'<input type="text" class="large-text" id="mbe_gig_tour" name="mbe_gig_tour" value="%s" placeholder="%s" />',
+				esc_attr( $values['mbe_gig_tour'] ),
+				esc_attr( $fields['mbe_gig_tour']['help'] )
+			)
+		);
+
+		self::field_row(
 			'mbe_gig_end_date',
 			$fields['mbe_gig_end_date']['label'],
 			sprintf(
