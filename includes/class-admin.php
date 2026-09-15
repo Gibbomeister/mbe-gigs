@@ -276,10 +276,13 @@ class MBE_Gigs_Admin {
 			$label = $term->name;
 
 			if ( MBE_GIGS_TAX_VENUE === $taxonomy ) {
-				$city = (string) get_term_meta( $term->term_id, 'mbe_venue_city', true );
+				// Name alone doesn't identify a venue — there are two Pier Hotels.
+				$city     = (string) get_term_meta( $term->term_id, 'mbe_venue_city', true );
+				$state    = (string) get_term_meta( $term->term_id, 'mbe_venue_state', true );
+				$location = trim( $city . ( ( '' !== $city && '' !== $state ) ? ' ' : '' ) . $state );
 
-				if ( '' !== $city ) {
-					$label .= ' — ' . $city;
+				if ( '' !== $location ) {
+					$label .= ' — ' . $location;
 				}
 			}
 
@@ -727,6 +730,8 @@ class MBE_Gigs_Admin {
 			.mbe-editor-heading { margin: 22px 0 2px; font-size: 14px; }
 			.mbe-editor-help { margin: 0 0 8px; }
 			#mbe-gig-details .inside { padding-top: 12px; }
+			/* [hidden] must win — an author display rule beats the browser's own. */
+			.mbe-term-new-wrap[hidden] { display: none; }
 			.mbe-term-new-wrap { display: inline-flex; gap: 6px; margin-left: 6px; }
 			.mbe-term-new-wrap input { min-width: 180px; }
 			.mbe-term-new-wrap input.mbe-state { min-width: 80px; text-transform: uppercase; }
