@@ -3,7 +3,7 @@
  * Plugin Name:       MBE Gigs
  * Plugin URI:        https://mybusinessengine.com/
  * Description:       Gig listings as a custom post type, with venues and artists as taxonomies. Replaces GigPress.
- * Version:           1.0.4
+ * Version:           1.0.5
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            My Business Engine
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MBE_GIGS_VERSION', '1.0.4' );
+define( 'MBE_GIGS_VERSION', '1.0.5' );
 define( 'MBE_GIGS_FILE', __FILE__ );
 define( 'MBE_GIGS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'MBE_GIGS_URL', plugin_dir_url( __FILE__ ) );

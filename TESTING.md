@@ -130,7 +130,10 @@ This is the part a blank site can't fake. You need actual GigPress tables.
 ### Real import
 
 - [ ] `wp mbe-gigs import --venues=/path/to/venues-worksheet.csv`
-- [ ] Counts at the end match the row count from `inspect`, allowing for skips.
+- [ ] Counts at the end match the row count from `inspect`, minus the shows it
+      reported as deleted in GigPress. Those are soft-deleted rows — GigPress keeps
+      them and hides them, so the table holds more shows than the site displays, and
+      importing them would resurrect gigs someone removed on purpose.
 
 ### Verify the result
 

@@ -211,6 +211,36 @@ class MBE_Gigs_Importer {
 			}
 		}
 
+		/*
+		 * Two counts that explain any gap between what GigPress displays and what its
+		 * tables hold. Both bit on the first real site, so both get reported.
+		 */
+		if ( $map['status'] ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- identifiers only.
+			$deleted = (int) $wpdb->get_var(
+				sprintf(
+					"SELECT COUNT(*) FROM `%s` WHERE LOWER(TRIM(`%s`)) IN ('deleted','trash','trashed')",
+					$tables['shows'],
+					esc_sql( $map['status'] )
+				)
+			);
+
+			WP_CLI::line( sprintf( 'Deleted in GigPress: %d shows, which will be skipped.', $deleted ) );
+		}
+
+		if ( $map['time'] ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- identifiers only.
+			$tba = (int) $wpdb->get_var(
+				sprintf(
+					"SELECT COUNT(*) FROM `%s` WHERE `%s` IN ('00:00:00','00:00:01')",
+					$tables['shows'],
+					esc_sql( $map['time'] )
+				)
+			);
+
+			WP_CLI::line( sprintf( 'Time not announced: %d shows, which import with no time rather than midnight.', $tba ) );
+		}
+
 		$already = $this->imported_count();
 		WP_CLI::line( '' );
 		WP_CLI::line( sprintf( 'Gigs already imported into this site: %d', $already ) );
@@ -610,7 +640,20 @@ class MBE_Gigs_Importer {
 	 */
 	protected function import_show( $row, $map, $venue_map, $artist_map, $fallback, $post_status, $dry_run, $log ) {
 		$source_id = (int) $row[ $map['id'] ];
-		$date      = MBE_Gigs_Meta::sanitize_date( $this->value( $row, $map, 'date' ) );
+
+		/*
+		 * GigPress soft-deletes. A removed show keeps its row with status "deleted"
+		 * and simply stops being displayed, which is why its own export reports fewer
+		 * shows than the table holds. Importing these would resurrect gigs someone
+		 * deliberately removed — on tedmulrygang, two future dates at real venues.
+		 */
+		if ( in_array( strtolower( trim( $this->value( $row, $map, 'status' ) ) ), self::deleted_statuses(), true ) ) {
+			$this->log( $log, 'gig', $source_id, 'skipped', 'deleted in GigPress' );
+
+			return 'skipped';
+		}
+
+		$date = MBE_Gigs_Meta::sanitize_date( $this->value( $row, $map, 'date' ) );
 
 		if ( '' === $date ) {
 			$this->log( $log, 'gig', $source_id, 'skipped', 'no usable date: ' . $this->value( $row, $map, 'date' ) );
@@ -704,7 +747,7 @@ class MBE_Gigs_Importer {
 
 		$meta = array(
 			'mbe_gig_date'       => $date,
-			'mbe_gig_time'       => MBE_Gigs_Meta::sanitize_time( $this->value( $row, $map, 'time' ) ),
+			'mbe_gig_time'       => MBE_Gigs_Meta::sanitize_time( self::real_time( $this->value( $row, $map, 'time' ) ) ),
 			'mbe_gig_end_date'   => MBE_Gigs_Meta::sanitize_date( $this->value( $row, $map, 'end_date' ) ),
 			'mbe_gig_ticket_url' => MBE_Gigs_Meta::sanitize_url( $this->value( $row, $map, 'tickets' ) ),
 			'mbe_gig_price'      => sanitize_text_field( $this->value( $row, $map, 'price' ) ),
@@ -913,6 +956,37 @@ class MBE_Gigs_Importer {
 		);
 
 		return count( $found );
+	}
+
+	/**
+	 * GigPress statuses that mean "this show is gone".
+	 *
+	 * @return array
+	 */
+	public static function deleted_statuses() {
+		return array( 'deleted', 'trash', 'trashed' );
+	}
+
+	/**
+	 * Strip GigPress's "time to be announced" sentinel.
+	 *
+	 * `show_time` is NOT NULL, so GigPress writes 00:00:01 when no time is set — a
+	 * value that is a perfectly valid time as far as any parser is concerned. Taken
+	 * literally it puts a midnight on every gig whose time hasn't been announced,
+	 * which on these sites is a good share of them. 00:00:00 is treated the same way:
+	 * a band booked to start at exactly midnight is not a real case, and losing that
+	 * one edge is much cheaper than midnights appearing across a whole site.
+	 *
+	 * GigPress's own CSV export renders these as blank, which is why a first pass
+	 * over the exports suggested no row faked a time.
+	 *
+	 * @param string $time Raw value.
+	 * @return string Empty string when the time is a sentinel.
+	 */
+	public static function real_time( $time ) {
+		$time = trim( (string) $time );
+
+		return in_array( $time, array( '00:00:00', '00:00:01', '00:00' ), true ) ? '' : $time;
 	}
 
 	/**
