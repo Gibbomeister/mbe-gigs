@@ -117,6 +117,9 @@ add_filter( 'mbe_gigs_venue_slug',   function () { return 'venues'; } );
 
 // Put gigs back in the block editor.
 add_filter( 'mbe_gigs_use_block_editor', '__return_true' );
+
+// Show the slug field on the venue and artist screens, for curating URLs by hand.
+add_filter( 'mbe_gigs_hide_term_slug', '__return_false' );
 ```
 
 Flush permalinks after changing any slug or archive filter: **Settings → Permalinks → Save**.

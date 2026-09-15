@@ -135,6 +135,40 @@ class MBE_Gigs_Meta {
 		// Venue list table gets a city column — without it every RSL looks the same.
 		add_filter( 'manage_edit-' . MBE_GIGS_TAX_VENUE . '_columns', array( __CLASS__, 'venue_columns' ) );
 		add_filter( 'manage_' . MBE_GIGS_TAX_VENUE . '_custom_column', array( __CLASS__, 'venue_column_content' ), 10, 3 );
+
+		add_action( 'admin_head', array( __CLASS__, 'term_screen_tidy' ) );
+	}
+
+	/**
+	 * Hide the slug field on the venue and artist screens.
+	 *
+	 * The slug is generated from the name and almost never wants changing. Left on
+	 * screen it reads as something you're supposed to fill in, and on a venue that
+	 * already has an archive URL, editing it breaks every link to that page — a
+	 * consequence the field gives no hint of.
+	 *
+	 * Hidden rather than removed: the input still posts, so an existing slug submits
+	 * unchanged and a new term still generates one from its name. To bring it back on
+	 * a site where you want to curate URLs by hand:
+	 *
+	 *     add_filter( 'mbe_gigs_hide_term_slug', '__return_false' );
+	 */
+	public static function term_screen_tidy() {
+		if ( ! apply_filters( 'mbe_gigs_hide_term_slug', true ) ) {
+			return;
+		}
+
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( ! $screen || empty( $screen->taxonomy ) ) {
+			return;
+		}
+
+		if ( ! in_array( $screen->taxonomy, array( MBE_GIGS_TAX_VENUE, MBE_GIGS_TAX_ARTIST ), true ) ) {
+			return;
+		}
+
+		echo '<style>.term-slug-wrap { display: none; }</style>';
 	}
 
 	/**
