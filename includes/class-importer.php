@@ -309,10 +309,14 @@ class MBE_Gigs_Importer {
 		 * terms instead of making a second set.
 		 */
 		$venue_map = $this->import_venues( $tables['venues'], $overrides, $dry_run, $log );
-		WP_CLI::line( sprintf( 'Venues: %d mapped', count( $venue_map ) ) );
-
 		$artist_map = $this->import_artists( $tables['artists'], $dry_run, $log );
-		WP_CLI::line( sprintf( 'Artists: %d mapped', count( $artist_map ) ) );
+
+		/*
+		 * Counted from the recorded names rather than the term map, so a dry run —
+		 * which creates no terms — reports the venues it read rather than zero.
+		 */
+		WP_CLI::line( sprintf( 'Venues: %d', count( $this->venue_names ) ) );
+		WP_CLI::line( sprintf( 'Artists: %d', count( $this->artist_names ) ) );
 
 		// Tours are carried as a plain name on the gig, not as terms of their own.
 		$this->tour_map = $this->load_tours( $tables['tours'] );

@@ -43,6 +43,14 @@ you rebuild the display and the content is untouched.
 | `mbe_gig_price` | text | Free text — "$25", "Free entry". |
 | `mbe_gig_status` | `scheduled` / `cancelled` / `postponed` | |
 | `mbe_gig_tour` | text | The tour or billing, e.g. "Final Blitz with Sweet". A name, not a taxonomy. |
+| `mbe_gig_title` | text | Optional override. Blank means the title is generated. |
+
+The post type does **not** support `title`. A gig is titled *Artist — Venue, 12 October
+2026*, built on save from the fields, because a title field someone has to be told to
+leave blank is a field in the wrong place. `post_title` is still set normally, so
+search, admin columns and permalinks behave as they would anywhere else. The optional
+`mbe_gig_title` field overrides it; clearing that field hands the gig back to the
+generator.
 
 **Venue term meta:** `mbe_venue_address`, `_city`, `_state`, `_postcode`, `_country`,
 `_phone`, `_url`, `_capacity`.

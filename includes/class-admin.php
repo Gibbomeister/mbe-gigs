@@ -16,6 +16,7 @@ class MBE_Gigs_Admin {
 
 	public static function hooks() {
 		add_action( 'add_meta_boxes', array( __CLASS__, 'meta_boxes' ) );
+		add_action( 'edit_form_after_title', array( __CLASS__, 'render_top' ) );
 		add_action( 'save_post_' . MBE_GIGS_CPT, array( __CLASS__, 'save' ), 10, 2 );
 
 		add_filter( 'manage_' . MBE_GIGS_CPT . '_posts_columns', array( __CLASS__, 'columns' ) );
@@ -38,13 +39,41 @@ class MBE_Gigs_Admin {
 		remove_meta_box( 'tagsdiv-' . MBE_GIGS_TAX_VENUE, MBE_GIGS_CPT, 'side' );
 		remove_meta_box( 'tagsdiv-' . MBE_GIGS_TAX_ARTIST, MBE_GIGS_CPT, 'side' );
 
+		/*
+		 * A custom context, rendered by render_top() on edit_form_after_title. The
+		 * normal context puts meta boxes below the editor, which reads backwards here:
+		 * the date and the venue are the gig, and the description is an afterthought.
+		 */
 		add_meta_box(
 			'mbe-gig-details',
 			__( 'Gig details', 'mbe-gigs' ),
 			array( __CLASS__, 'render_meta_box' ),
 			MBE_GIGS_CPT,
-			'normal',
+			'mbe_gig_top',
 			'high'
+		);
+	}
+
+	/**
+	 * Put the gig fields above the editor, and give the editor a label.
+	 *
+	 * WordPress gives the content editor no label at all, which is why it reads as a
+	 * mystery box to anyone who didn't build the screen. One heading and one line of
+	 * guidance removes the need to train people on it.
+	 *
+	 * @param WP_Post $post Post being edited.
+	 */
+	public static function render_top( $post ) {
+		if ( ! $post || MBE_GIGS_CPT !== $post->post_type ) {
+			return;
+		}
+
+		do_meta_boxes( get_current_screen(), 'mbe_gig_top', $post );
+
+		printf(
+			'<h2 class="mbe-editor-heading">%s</h2><p class="mbe-help mbe-editor-help">%s</p>',
+			esc_html__( 'Description', 'mbe-gigs' ),
+			esc_html__( 'Optional. Support acts, ticket details, anything worth saying about this gig. It shows underneath the gig on the website.', 'mbe-gigs' )
 		);
 	}
 
@@ -166,12 +195,28 @@ class MBE_Gigs_Admin {
 			)
 		);
 
+		self::field_row(
+			'mbe_gig_title',
+			$fields['mbe_gig_title']['label'],
+			sprintf(
+				'<input type="text" class="large-text" id="mbe_gig_title" name="mbe_gig_title" value="%s" placeholder="%s" />',
+				esc_attr( $values['mbe_gig_title'] ),
+				esc_attr( $fields['mbe_gig_title']['help'] )
+			)
+		);
+
 		echo '</div>';
 
-		printf(
-			'<p class="mbe-help">%s</p>',
-			esc_html__( 'Anything you type in the main editor below shows as the gig description — support acts, ticket notes, anything worth saying.', 'mbe-gigs' )
-		);
+		// What this gig is actually called, so the generated title isn't a mystery.
+		$listed_as = MBE_Gigs_Post_Type::preview_title( $post->ID );
+
+		if ( '' !== $listed_as ) {
+			printf(
+				'<p class="mbe-listed-as">%s <strong>%s</strong></p>',
+				esc_html__( 'Listed as:', 'mbe-gigs' ),
+				esc_html( $listed_as )
+			);
+		}
 	}
 
 	/**
@@ -633,6 +678,10 @@ class MBE_Gigs_Admin {
 			.mbe-status { display: inline-block; padding: 2px 8px; border-radius: 9px; font-size: 12px; background: #edeff0; }
 			.mbe-status-cancelled { background: #f7dcdc; color: #8a1f1f; }
 			.mbe-status-postponed { background: #fcf1dc; color: #8a5b1f; }
+			.mbe-listed-as { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid #f0f0f1; color: #50575e; }
+			.mbe-editor-heading { margin: 22px 0 2px; font-size: 14px; }
+			.mbe-editor-help { margin: 0 0 8px; }
+			#mbe-gig-details .inside { padding-top: 12px; }
 			.column-mbe_gig_date { width: 160px; }
 			.column-mbe_gig_status { width: 110px; }
 		</style>

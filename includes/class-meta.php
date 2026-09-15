@@ -76,6 +76,12 @@ class MBE_Gigs_Meta {
 				'default'  => 'scheduled',
 				'sanitize' => array( __CLASS__, 'sanitize_status' ),
 			),
+			'mbe_gig_title'      => array(
+				'label'    => __( 'Custom title', 'mbe-gigs' ),
+				'type'     => 'text',
+				'sanitize' => 'sanitize_text_field',
+				'help'     => __( 'Leave blank and the gig is listed as artist, venue and date.', 'mbe-gigs' ),
+			),
 			'mbe_gig_tour'       => array(
 				'label'    => __( 'Tour', 'mbe-gigs' ),
 				'type'     => 'text',

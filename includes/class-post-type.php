@@ -19,7 +19,6 @@ class MBE_Gigs_Post_Type {
 	public static function hooks() {
 		add_filter( 'wp_insert_post_empty_content', array( __CLASS__, 'allow_empty_content' ), 10, 2 );
 		add_filter( 'wp_insert_post_data', array( __CLASS__, 'auto_title' ), 10, 2 );
-		add_filter( 'enter_title_here', array( __CLASS__, 'title_placeholder' ), 10, 2 );
 		add_filter( 'use_block_editor_for_post_type', array( __CLASS__, 'editor' ), 10, 2 );
 	}
 
@@ -113,7 +112,15 @@ class MBE_Gigs_Post_Type {
 					'slug'       => apply_filters( 'mbe_gigs_rewrite_slug', 'gigs' ),
 					'with_front' => false,
 				),
-				'supports'           => array( 'title', 'editor', 'thumbnail', 'excerpt', 'revisions' ),
+				/*
+				 * No 'title'. The title is derived from artist, venue and date, so
+				 * WordPress's title box would be a field that has to be explained —
+				 * and a field that has to be explained is a field in the wrong place.
+				 * post_title is still set programmatically, so nothing downstream
+				 * changes. A gig that needs its own wording uses the optional Custom
+				 * title field in the gig details box.
+				 */
+				'supports'           => array( 'editor', 'thumbnail', 'excerpt', 'revisions' ),
 				'taxonomies'         => array( MBE_GIGS_TAX_VENUE, MBE_GIGS_TAX_ARTIST ),
 				'capability_type'    => 'post',
 				'map_meta_cap'       => true,
@@ -236,11 +243,23 @@ class MBE_Gigs_Post_Type {
 		}
 
 		$post_id = isset( $postarr['ID'] ) ? (int) $postarr['ID'] : 0;
-		$current = trim( wp_strip_all_tags( $data['post_title'] ) );
-		$stored  = $post_id ? (string) get_post_meta( $post_id, 'mbe_gig_auto_title', true ) : '';
 
-		// Someone wrote their own title. Leave it alone.
-		if ( '' !== $current && $current !== $stored ) {
+		/*
+		 * A custom title always wins, and clearing it hands the gig back to the
+		 * generator — which is the behaviour someone would expect from a field
+		 * labelled "leave blank to use the generated title".
+		 */
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- read-only; the save handler verifies.
+		if ( isset( $_POST['mbe_gig_title'] ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$custom = trim( sanitize_text_field( wp_unslash( $_POST['mbe_gig_title'] ) ) );
+		} else {
+			$custom = $post_id ? trim( (string) get_post_meta( $post_id, 'mbe_gig_title', true ) ) : '';
+		}
+
+		if ( '' !== $custom ) {
+			$data['post_title'] = $custom;
+
 			return $data;
 		}
 
@@ -377,17 +396,20 @@ class MBE_Gigs_Post_Type {
 	}
 
 	/**
-	 * Nudge people away from typing a title at all.
+	 * The title this gig would be given, for showing on the edit screen.
 	 *
-	 * @param string  $text Placeholder text.
-	 * @param WP_Post $post Post being edited.
+	 * @param int $post_id Post ID.
 	 * @return string
 	 */
-	public static function title_placeholder( $text, $post ) {
-		if ( $post && MBE_GIGS_CPT === $post->post_type ) {
-			return __( 'Leave blank — built from artist, venue and date', 'mbe-gigs' );
+	public static function preview_title( $post_id ) {
+		$custom = trim( (string) get_post_meta( $post_id, 'mbe_gig_title', true ) );
+
+		if ( '' !== $custom ) {
+			return $custom;
 		}
 
-		return $text;
+		$stored = get_post_field( 'post_title', $post_id );
+
+		return is_string( $stored ) ? $stored : '';
 	}
 }

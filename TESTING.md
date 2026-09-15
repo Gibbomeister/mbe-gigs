@@ -28,16 +28,18 @@ matters if it breaks.
 
 ### Entering a gig
 
-- [ ] **Gigs → Add Gig.** The screen is the classic editor with one "Gig details" box —
-      *not* the block editor. If you see the block editor, the `use_block_editor_for_post_type`
-      filter isn't firing.
-- [ ] Leave the title blank. Set a date, pick **+ Add a new venue**, type a venue name,
-      pick **+ Add a new artist**, type an artist name. Publish.
-- [ ] Title generated as **Artist — Venue, 12 October 2026**. The permalink matches.
-- [ ] Re-open it and change the date. The title updates to the new date.
-- [ ] Now type your own title over the top and update. The title **stays as you typed
-      it** and stops regenerating. That's the rule: a deliberate title is never
-      overwritten.
+- [ ] **Gigs → Add Gig.** The screen is the classic editor — *not* the block editor. If
+      you see the block editor, the `use_block_editor_for_post_type` filter isn't firing.
+- [ ] **There is no WordPress title field.** The screen opens with the "Gig details" box
+      at the top, then a labelled **Description** heading above the editor.
+- [ ] Set a date, pick **+ Add a new venue**, type a venue name, pick **+ Add a new
+      artist**, type an artist name. Publish.
+- [ ] After saving, **Listed as:** at the foot of the gig details box reads
+      **Artist — Venue, 12 October 2026**, and that's the title in the Gigs list.
+- [ ] Re-open it and change the date. The title follows the new date.
+- [ ] Type something into **Custom title** and update. That wording wins everywhere.
+- [ ] Clear the Custom title and update. The gig goes back to the generated title —
+      clearing the field should hand it back, not leave the old custom wording stuck.
 
 ### The fields
 
