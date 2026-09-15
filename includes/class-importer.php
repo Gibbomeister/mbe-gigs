@@ -87,6 +87,18 @@ class MBE_Gigs_Importer {
 	/** @var array GigPress tour ID => tour name, set during import(). */
 	protected $tour_map = array();
 
+	/**
+	 * Names by source ID, recorded whether or not a term was created.
+	 *
+	 * A dry run creates no terms, so without these the generated gig titles would
+	 * come out as a bare date — making the dry run report something different from
+	 * what the real run produces, which defeats the point of having one.
+	 *
+	 * @var array
+	 */
+	protected $venue_names  = array();
+	protected $artist_names = array();
+
 	protected $venue_columns = array(
 		'id'       => array( 'venue_id', 'id' ),
 		'name'     => array( 'venue_name', 'name' ),
@@ -413,6 +425,9 @@ class MBE_Gigs_Importer {
 			$final_city  = $override['city'] ? $override['city'] : $city;
 			$final_state = $override['state'] ? $override['state'] : ( $map['state'] ? trim( (string) $row[ $map['state'] ] ) : '' );
 
+			// Recorded before any of the branches below, so a dry run still has names.
+			$this->venue_names[ $source_id ] = $final_name;
+
 			// Already mapped from an earlier run.
 			if ( isset( $stored[ $source_id ] ) && get_term( (int) $stored[ $source_id ], MBE_GIGS_TAX_VENUE ) ) {
 				$result[ $source_id ] = (int) $stored[ $source_id ];
@@ -545,6 +560,8 @@ class MBE_Gigs_Importer {
 				continue;
 			}
 
+			$this->artist_names[ $source_id ] = $name;
+
 			$existing = get_term_by( 'name', $name, MBE_GIGS_TAX_ARTIST );
 
 			if ( $existing ) {
@@ -609,16 +626,29 @@ class MBE_Gigs_Importer {
 			return 'skipped';
 		}
 
-		$venue_term  = isset( $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] ) ? $venue_map[ (int) $this->value( $row, $map, 'venue' ) ] : 0;
-		$artist_term = isset( $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] ) ? $artist_map[ (int) $this->value( $row, $map, 'artist' ) ] : 0;
+		$venue_source  = (int) $this->value( $row, $map, 'venue' );
+		$artist_source = (int) $this->value( $row, $map, 'artist' );
+
+		$venue_term  = isset( $venue_map[ $venue_source ] ) ? $venue_map[ $venue_source ] : 0;
+		$artist_term = isset( $artist_map[ $artist_source ] ) ? $artist_map[ $artist_source ] : 0;
 
 		// No venues-table entry — fall back to the venue snapshot on the show itself.
 		if ( ! $venue_term ) {
 			$venue_term = $this->venue_from_show( $row, $source_id, $dry_run, $log );
 		}
 
-		$venue_name  = $this->term_name( $venue_term, MBE_GIGS_TAX_VENUE );
-		$artist_name = $this->term_name( $artist_term, MBE_GIGS_TAX_ARTIST );
+		/*
+		 * Names come from what the venue and artist passes recorded, which happens in
+		 * both modes. Falling back to the term only matters when a term already
+		 * existed before this run.
+		 */
+		$venue_name = isset( $this->venue_names[ $venue_source ] )
+			? $this->venue_names[ $venue_source ]
+			: $this->term_name( $venue_term, MBE_GIGS_TAX_VENUE );
+
+		$artist_name = isset( $this->artist_names[ $artist_source ] )
+			? $this->artist_names[ $artist_source ]
+			: $this->term_name( $artist_term, MBE_GIGS_TAX_ARTIST );
 
 		if ( '' === $artist_name ) {
 			$artist_name = $fallback;
@@ -1001,7 +1031,13 @@ class MBE_Gigs_Importer {
 		$sql = "SELECT * FROM `{$table}`";
 
 		if ( $order_by ) {
-			$sql .= ' ORDER BY `' . esc_sql( $order_by ) . '` ASC';
+			/*
+			 * A limited run samples the most recent rows. The oldest 20 gigs on any of
+			 * these sites are all long past and all single-day — exactly the rows least
+			 * likely to show a problem. The newest 20 carry the upcoming gigs, the
+			 * cancellations and the multi-day events.
+			 */
+			$sql .= ' ORDER BY `' . esc_sql( $order_by ) . '` ' . ( $limit > 0 ? 'DESC' : 'ASC' );
 		}
 
 		if ( $limit > 0 ) {
