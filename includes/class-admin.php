@@ -263,7 +263,7 @@ class MBE_Gigs_Admin {
 		}
 
 		$html = sprintf(
-			'<select id="%1$s" name="%1$s" class="mbe-term-select" data-new-field="%1$s_new">',
+			'<select id="%1$s" name="%1$s" class="mbe-term-select" data-new-wrap="%1$s_wrap">',
 			esc_attr( $name )
 		);
 
@@ -298,11 +298,35 @@ class MBE_Gigs_Admin {
 
 		$html .= '</select>';
 
+		/*
+		 * A new venue is captured with its city and state here rather than left for
+		 * someone to fill in later on the Venues screen. Later never comes, and a
+		 * venue with no city can't be told apart from the identically-named pub in
+		 * another state.
+		 */
+		$html .= sprintf( '<span class="mbe-term-new-wrap" id="%s_wrap" hidden>', esc_attr( $name ) );
+
 		$html .= sprintf(
-			' <input type="text" name="%1$s_new" id="%1$s_new" class="mbe-term-new" style="display:none" placeholder="%2$s" />',
+			'<input type="text" name="%1$s_new" id="%1$s_new" placeholder="%2$s" />',
 			esc_attr( $name ),
 			esc_attr( sprintf( /* translators: %s: venue or artist */ __( 'New %s name', 'mbe-gigs' ), $noun ) )
 		);
+
+		if ( MBE_GIGS_TAX_VENUE === $taxonomy ) {
+			$html .= sprintf(
+				'<input type="text" name="%1$s_new_city" id="%1$s_new_city" placeholder="%2$s" />',
+				esc_attr( $name ),
+				esc_attr__( 'City or suburb', 'mbe-gigs' )
+			);
+
+			$html .= sprintf(
+				'<input type="text" name="%1$s_new_state" id="%1$s_new_state" class="mbe-state" placeholder="%2$s" />',
+				esc_attr( $name ),
+				esc_attr__( 'State', 'mbe-gigs' )
+			);
+		}
+
+		$html .= '</span>';
 
 		return $html;
 	}
@@ -374,26 +398,47 @@ class MBE_Gigs_Admin {
 		$value = sanitize_text_field( wp_unslash( $_POST[ $field ] ) );
 
 		if ( '__new__' === $value ) {
-			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified in save().
-			$name = isset( $_POST[ $field . '_new' ] ) ? sanitize_text_field( wp_unslash( $_POST[ $field . '_new' ] ) ) : '';
-			$name = trim( $name );
+			// phpcs:disable WordPress.Security.NonceVerification.Missing -- verified in save().
+			$name  = isset( $_POST[ $field . '_new' ] ) ? trim( sanitize_text_field( wp_unslash( $_POST[ $field . '_new' ] ) ) ) : '';
+			$city  = isset( $_POST[ $field . '_new_city' ] ) ? trim( sanitize_text_field( wp_unslash( $_POST[ $field . '_new_city' ] ) ) ) : '';
+			$state = isset( $_POST[ $field . '_new_state' ] ) ? MBE_Gigs_Meta::sanitize_state( wp_unslash( $_POST[ $field . '_new_state' ] ) ) : '';
+			// phpcs:enable
 
 			if ( '' === $name ) {
 				return;
 			}
 
-			$existing = get_term_by( 'name', $name, $taxonomy );
-
-			if ( $existing ) {
-				$term_id = $existing->term_id;
+			// Name plus city, so two pubs of the same name in different towns stay apart.
+			if ( MBE_GIGS_TAX_VENUE === $taxonomy ) {
+				$term_id = MBE_Gigs_Meta::find_venue( $name, $city );
 			} else {
+				$existing = get_term_by( 'name', $name, $taxonomy );
+				$term_id  = $existing ? (int) $existing->term_id : 0;
+			}
+
+			if ( ! $term_id ) {
 				$created = wp_insert_term( $name, $taxonomy );
+
+				if ( is_wp_error( $created ) ) {
+					$created = wp_insert_term( $name, $taxonomy, array( 'slug' => sanitize_title( $name . ' ' . $city ) ) );
+				}
 
 				if ( is_wp_error( $created ) ) {
 					return;
 				}
 
-				$term_id = $created['term_id'];
+				$term_id = (int) $created['term_id'];
+			}
+
+			if ( MBE_GIGS_TAX_VENUE === $taxonomy ) {
+				// Never overwrite detail already recorded against an existing venue.
+				if ( '' !== $city && '' === (string) get_term_meta( $term_id, 'mbe_venue_city', true ) ) {
+					update_term_meta( $term_id, 'mbe_venue_city', $city );
+				}
+
+				if ( '' !== $state && '' === (string) get_term_meta( $term_id, 'mbe_venue_state', true ) ) {
+					update_term_meta( $term_id, 'mbe_venue_state', $state );
+				}
 			}
 
 			wp_set_object_terms( $post_id, array( (int) $term_id ), $taxonomy, false );
@@ -682,6 +727,9 @@ class MBE_Gigs_Admin {
 			.mbe-editor-heading { margin: 22px 0 2px; font-size: 14px; }
 			.mbe-editor-help { margin: 0 0 8px; }
 			#mbe-gig-details .inside { padding-top: 12px; }
+			.mbe-term-new-wrap { display: inline-flex; gap: 6px; margin-left: 6px; }
+			.mbe-term-new-wrap input { min-width: 180px; }
+			.mbe-term-new-wrap input.mbe-state { min-width: 80px; text-transform: uppercase; }
 			.column-mbe_gig_date { width: 160px; }
 			.column-mbe_gig_status { width: 110px; }
 		</style>
@@ -690,16 +738,18 @@ class MBE_Gigs_Admin {
 				if ( ! e.target.classList || ! e.target.classList.contains( 'mbe-term-select' ) ) {
 					return;
 				}
-				var field = document.getElementById( e.target.dataset.newField );
-				if ( ! field ) {
+				var wrap = document.getElementById( e.target.dataset.newWrap );
+				if ( ! wrap ) {
 					return;
 				}
 				var adding = '__new__' === e.target.value;
-				field.style.display = adding ? 'inline-block' : 'none';
+				var inputs = wrap.querySelectorAll( 'input' );
+				wrap.hidden = ! adding;
 				if ( adding ) {
-					field.focus();
+					inputs[ 0 ].focus();
 				} else {
-					field.value = '';
+					// Clear, so switching back to an existing term can't leave a stray name behind.
+					inputs.forEach( function ( input ) { input.value = ''; } );
 				}
 			} );
 		</script>

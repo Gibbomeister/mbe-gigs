@@ -548,27 +548,8 @@ class MBE_Gigs_Importer {
 	 * @return int Term ID, or 0.
 	 */
 	protected function find_venue_term( $name, $city ) {
-		$terms = get_terms(
-			array(
-				'taxonomy'   => MBE_GIGS_TAX_VENUE,
-				'hide_empty' => false,
-				'name'       => $name,
-			)
-		);
-
-		if ( is_wp_error( $terms ) || ! $terms ) {
-			return 0;
-		}
-
-		foreach ( $terms as $term ) {
-			$term_city = (string) get_term_meta( $term->term_id, 'mbe_venue_city', true );
-
-			if ( '' === $city || '' === $term_city || 0 === strcasecmp( $term_city, $city ) ) {
-				return (int) $term->term_id;
-			}
-		}
-
-		return 0;
+		// Shared with the gig edit screen, so both agree on what counts as the same venue.
+		return MBE_Gigs_Meta::find_venue( $name, $city );
 	}
 
 	/**

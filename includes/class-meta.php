@@ -274,6 +274,14 @@ class MBE_Gigs_Meta {
 		}
 
 		foreach ( self::venue_fields() as $key => $field ) {
+			if ( 'url' === $field['type'] ) {
+				$sanitize = array( __CLASS__, 'sanitize_url' );
+			} elseif ( 'mbe_venue_state' === $key ) {
+				$sanitize = array( __CLASS__, 'sanitize_state' );
+			} else {
+				$sanitize = 'sanitize_text_field';
+			}
+
 			register_term_meta(
 				MBE_GIGS_TAX_VENUE,
 				$key,
@@ -281,7 +289,7 @@ class MBE_Gigs_Meta {
 					'type'              => 'string',
 					'single'            => true,
 					'show_in_rest'      => true,
-					'sanitize_callback' => ( 'url' === $field['type'] ) ? array( __CLASS__, 'sanitize_url' ) : 'sanitize_text_field',
+					'sanitize_callback' => $sanitize,
 					'auth_callback'     => array( __CLASS__, 'can_edit_terms' ),
 				)
 			);
@@ -374,6 +382,92 @@ class MBE_Gigs_Meta {
 		}
 
 		return esc_url_raw( $value );
+	}
+
+	/**
+	 * Normalise an Australian state to its abbreviation.
+	 *
+	 * The audit found the same state written five ways across the portfolio — NSW,
+	 * New South Wales, VIC, Vic, Victoria — which is exactly the drift the venue
+	 * taxonomy exists to prevent, happening one field to the right. Anything that
+	 * isn't a recognised Australian state passes through untouched, so overseas
+	 * venues are unaffected.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string
+	 */
+	public static function sanitize_state( $value ) {
+		$value = is_scalar( $value ) ? trim( (string) $value ) : '';
+
+		if ( '' === $value ) {
+			return '';
+		}
+
+		$map = array(
+			'nsw'                           => 'NSW',
+			'new south wales'               => 'NSW',
+			'vic'                           => 'VIC',
+			'victoria'                      => 'VIC',
+			'qld'                           => 'QLD',
+			'queensland'                    => 'QLD',
+			'sa'                            => 'SA',
+			'south australia'               => 'SA',
+			'wa'                            => 'WA',
+			'western australia'             => 'WA',
+			'nt'                            => 'NT',
+			'northern territory'            => 'NT',
+			'act'                           => 'ACT',
+			'australian capital territory'  => 'ACT',
+			'tas'                           => 'TAS',
+			'tasmania'                      => 'TAS',
+		);
+
+		$key = strtolower( rtrim( $value, '.' ) );
+
+		return isset( $map[ $key ] ) ? $map[ $key ] : sanitize_text_field( $value );
+	}
+
+	/**
+	 * Find a venue term by name and city.
+	 *
+	 * Venue identity is name PLUS city — the Pier Hotel in Botany and the Pier Hotel
+	 * in Frankston are two different pubs. Shared by the importer and the gig edit
+	 * screen so both agree on what counts as the same venue.
+	 *
+	 * @param string $name Venue name.
+	 * @param string $city City.
+	 * @return int Term ID, or 0.
+	 */
+	public static function find_venue( $name, $city = '' ) {
+		$name = trim( (string) $name );
+
+		if ( '' === $name ) {
+			return 0;
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => MBE_GIGS_TAX_VENUE,
+				'hide_empty' => false,
+				'name'       => $name,
+			)
+		);
+
+		if ( is_wp_error( $terms ) || ! $terms ) {
+			return 0;
+		}
+
+		$city = trim( (string) $city );
+
+		foreach ( $terms as $term ) {
+			$term_city = (string) get_term_meta( $term->term_id, 'mbe_venue_city', true );
+
+			if ( '' === $city || '' === $term_city || 0 === strcasecmp( $term_city, $city ) ) {
+				return (int) $term->term_id;
+			}
+		}
+
+		return 0;
 	}
 
 	/**
