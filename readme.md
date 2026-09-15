@@ -308,8 +308,10 @@ markup, different CSS.
 
 ## Beaver Themer
 
-Field connections appear under **Post** as "Gig: date", "Gig: venue and location",
-"Gig: artist" and so on.
+The gig **list** comes from the shortcode above, not from a Posts module — see the note
+there. Field connections are for **singular** layouts, where there's one gig in context:
+they appear under **Post** as "Gig: date", "Gig: venue and location", "Gig: artist" and
+so on.
 
 Venue detail is exposed as **post** properties rather than term properties —
 `mbe_gig_venue_city`, `mbe_gig_venue_state`, `mbe_gig_venue_address`,
