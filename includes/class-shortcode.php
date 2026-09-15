@@ -83,6 +83,15 @@ class MBE_Gigs_Shortcode {
 		$show_artist = self::show_artist( $atts['show_artist'] );
 		$group_tours = 'no' !== $atts['group_by_tour'];
 
+		/*
+		 * The grid needs to know how many columns each row has, and that depends on
+		 * whether the artist cell is printed. Flagging it on the wrapper lets one
+		 * stylesheet handle both without counting children in CSS.
+		 */
+		if ( $show_artist ) {
+			$classes[] = 'mbe-gigs--with-artist';
+		}
+
 		$out  = sprintf( '<div class="%s">', esc_attr( implode( ' ', $classes ) ) );
 		$out .= '<ul class="mbe-gigs__list">';
 
@@ -156,6 +165,16 @@ class MBE_Gigs_Shortcode {
 	/**
 	 * One gig.
 	 *
+	 * The row is a flat set of cells — when, artist, where, venue, then one extra
+	 * line — so a CSS grid can align them into columns across every row. Nested
+	 * wrappers would make that impossible: a grid can only align its own children,
+	 * and the moment the venue is buried inside a details box, no amount of CSS gets
+	 * the venues on every row to line up.
+	 *
+	 * Everything secondary goes into .mbe-gig__extra as inline spans, so time,
+	 * address, notes and the ticket link sit on one line instead of stacking into a
+	 * tall block with the ticket link stranded off to the side.
+	 *
 	 * @param int   $post_id     Post ID.
 	 * @param bool  $show_artist Whether to print the artist.
 	 * @param array $atts        Shortcode attributes.
@@ -178,94 +197,132 @@ class MBE_Gigs_Shortcode {
 			$classes[] = 'mbe-gig--in-tour';
 		}
 
+		$venue = MBE_Gigs_Query::get_venue( $post_id );
+
 		$out = sprintf( '<li class="%s">', esc_attr( implode( ' ', $classes ) ) );
 
+		// Cell 1: the date, or dates.
 		$out .= self::date_block( $date, $end, $atts['date_format'] );
 
-		$out .= '<div class="mbe-gig__details">';
-
+		// Cell 2: the artist, on sites that have more than one.
 		if ( $show_artist ) {
 			$artist = MBE_Gigs_Post_Type::first_term_name( $post_id, MBE_GIGS_TAX_ARTIST );
 
-			if ( '' !== $artist ) {
-				$out .= sprintf( '<p class="mbe-gig__artist">%s</p>', esc_html( $artist ) );
-			}
+			$out .= sprintf(
+				'<p class="mbe-gig__artist">%s</p>',
+				esc_html( $artist )
+			);
 		}
 
-		$venue = MBE_Gigs_Query::get_venue( $post_id );
+		// Cells 3 and 4: where, then which room. Empty cells still render, because a
+		// grid column with a hole in it stops being a column.
+		$city  = $venue ? (string) get_term_meta( $venue->term_id, 'mbe_venue_city', true ) : '';
+		$state = $venue ? (string) get_term_meta( $venue->term_id, 'mbe_venue_state', true ) : '';
+		$where = trim( $city . ( ( '' !== $city && '' !== $state ) ? ' ' : '' ) . $state );
 
-		if ( $venue ) {
-			$out .= sprintf( '<p class="mbe-gig__venue">%s</p>', self::venue_name( $venue, $atts['venue_link'] ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		$out .= sprintf( '<p class="mbe-gig__location">%s</p>', esc_html( $where ) );
 
-			$city  = (string) get_term_meta( $venue->term_id, 'mbe_venue_city', true );
-			$state = (string) get_term_meta( $venue->term_id, 'mbe_venue_state', true );
-			$where = trim( $city . ( ( '' !== $city && '' !== $state ) ? ' ' : '' ) . $state );
+		$out .= sprintf(
+			'<p class="mbe-gig__venue">%s</p>',
+			$venue ? self::venue_name( $venue, $atts['venue_link'] ) : '' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		);
 
-			if ( '' !== $where ) {
-				$out .= sprintf( '<p class="mbe-gig__location">%s</p>', esc_html( $where ) );
-			}
-		}
+		// Cell 5: everything else, inline, on one line.
+		$extra = '';
 
 		$time = MBE_Gigs_Query::get_time( $post_id );
 
 		if ( '' !== $time ) {
-			$out .= self::detail( 'time', __( 'Time', 'mbe-gigs' ), esc_html( $time ) );
-		}
-
-		// The tour is on the heading above when grouping is on, so don't repeat it.
-		$tour = (string) get_post_meta( $post_id, 'mbe_gig_tour', true );
-
-		if ( '' !== $tour && ! $in_tour ) {
-			$out .= self::detail( 'tour', __( 'Tour', 'mbe-gigs' ), esc_html( $tour ) );
+			$extra .= self::detail( 'time', __( 'Time', 'mbe-gigs' ), esc_html( $time ) );
 		}
 
 		$price = (string) get_post_meta( $post_id, 'mbe_gig_price', true );
 
 		if ( '' !== $price ) {
-			$out .= self::detail( 'price', __( 'Admission', 'mbe-gigs' ), esc_html( $price ) );
+			$extra .= self::detail( 'price', __( 'Admission', 'mbe-gigs' ), esc_html( $price ) );
 		}
 
 		if ( $venue ) {
 			$address = self::address( $venue, 'no' !== $atts['map'] );
 
 			if ( '' !== $address ) {
-				$out .= self::detail( 'address', __( 'Address', 'mbe-gigs' ), $address );
+				$extra .= self::detail( 'address', __( 'Address', 'mbe-gigs' ), $address );
 			}
+		}
+
+		// The tour is on the heading above when grouping is on, so don't repeat it.
+		$tour = (string) get_post_meta( $post_id, 'mbe_gig_tour', true );
+
+		if ( '' !== $tour && ! $in_tour ) {
+			$extra .= self::detail( 'tour', __( 'Tour', 'mbe-gigs' ), esc_html( $tour ) );
+		}
+
+		$description = self::description( $post_id );
+
+		if ( '' !== $description ) {
+			$extra .= sprintf( '<span class="mbe-gig__description">%s</span>', $description ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		}
 
 		if ( 'scheduled' !== $status ) {
 			$labels = MBE_Gigs_Meta::statuses();
 
-			$out .= sprintf(
-				'<p class="mbe-gig__status">%s</p>',
+			$extra .= sprintf(
+				'<span class="mbe-gig__status">%s</span>',
 				esc_html( isset( $labels[ $status ] ) ? $labels[ $status ] : $status )
 			);
 		}
 
-		$content = get_post_field( 'post_content', $post_id );
-
-		if ( '' !== trim( (string) $content ) ) {
-			$out .= sprintf(
-				'<div class="mbe-gig__description">%s</div>',
-				wpautop( wp_kses_post( $content ) )
-			);
-		}
-
-		$out .= '</div>';
-
 		$tickets = (string) get_post_meta( $post_id, 'mbe_gig_ticket_url', true );
 
 		if ( '' !== $tickets ) {
-			$out .= sprintf(
-				'<p class="mbe-gig__actions"><a class="mbe-gig__tickets" href="%s" rel="noopener">%s</a></p>',
+			$extra .= sprintf(
+				'<a class="mbe-gig__tickets" href="%s" rel="noopener">%s</a>',
 				esc_url( $tickets ),
 				esc_html( $atts['tickets_label'] )
 			);
 		}
 
+		$out .= sprintf( '<p class="mbe-gig__extra">%s</p>', $extra ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+
 		$out .= '</li>';
 
 		return $out;
+	}
+
+	/**
+	 * The gig description, as inline markup.
+	 *
+	 * Kept inline rather than run through wpautop, so it can share a line with the
+	 * time and the ticket link. These are a sentence about the support acts, not an
+	 * article — the longest across nine sites is 381 characters.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	protected static function description( $post_id ) {
+		$content = trim( (string) get_post_field( 'post_content', $post_id ) );
+
+		if ( '' === $content ) {
+			return '';
+		}
+
+		$content = wp_kses(
+			$content,
+			array(
+				'a'      => array(
+					'href'   => array(),
+					'title'  => array(),
+					'rel'    => array(),
+					'target' => array(),
+				),
+				'em'     => array(),
+				'strong' => array(),
+				'br'     => array(),
+				'span'   => array( 'class' => array() ),
+			)
+		);
+
+		return nl2br( trim( $content ) );
 	}
 
 	/**
@@ -282,8 +339,13 @@ class MBE_Gigs_Shortcode {
 	 * @return string
 	 */
 	protected static function detail( $key, $label, $value ) {
+		/*
+		 * A span, not a paragraph. These sit inside .mbe-gig__extra, and a <p> nested
+		 * in a <p> is invalid HTML that browsers silently tear apart — which would
+		 * scatter the details back onto separate lines and look like a CSS problem.
+		 */
 		return sprintf(
-			'<p class="mbe-gig__%1$s"><span class="mbe-gig__label">%2$s</span> <span class="mbe-gig__value">%3$s</span></p>',
+			'<span class="mbe-gig__%1$s"><span class="mbe-gig__label">%2$s</span> <span class="mbe-gig__value">%3$s</span></span>',
 			esc_attr( $key ),
 			esc_html( $label ),
 			$value // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
