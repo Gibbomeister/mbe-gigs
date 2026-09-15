@@ -3,7 +3,7 @@
  * Plugin Name:       MBE Gigs
  * Plugin URI:        https://mybusinessengine.com/
  * Description:       Gig listings as a custom post type, with venues and artists as taxonomies. Replaces GigPress.
- * Version:           1.2.1
+ * Version:           1.3.0
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            My Business Engine
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MBE_GIGS_VERSION', '1.2.1' );
+define( 'MBE_GIGS_VERSION', '1.3.0' );
 define( 'MBE_GIGS_FILE', __FILE__ );
 define( 'MBE_GIGS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'MBE_GIGS_URL', plugin_dir_url( __FILE__ ) );
@@ -41,6 +41,7 @@ require_once MBE_GIGS_PATH . 'includes/class-meta.php';
 require_once MBE_GIGS_PATH . 'includes/class-query.php';
 require_once MBE_GIGS_PATH . 'includes/class-admin.php';
 require_once MBE_GIGS_PATH . 'includes/class-themer.php';
+require_once MBE_GIGS_PATH . 'includes/class-shortcode.php';
 require_once MBE_GIGS_PATH . 'includes/class-updater.php';
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -64,6 +65,7 @@ MBE_Gigs_Meta::hooks();
 MBE_Gigs_Query::hooks();
 MBE_Gigs_Admin::hooks();
 MBE_Gigs_Themer::hooks();
+MBE_Gigs_Shortcode::hooks();
 MBE_Gigs_Updater::hooks();
 
 /**

@@ -124,6 +124,85 @@ add_filter( 'mbe_gigs_hide_term_slug', '__return_false' );
 
 Flush permalinks after changing any slug or archive filter: **Settings → Permalinks → Save**.
 
+## Displaying gigs
+
+```
+[mbe_gigs]
+[mbe_gigs direction="past" limit="20"]
+[mbe_gigs venue="the-bridge-hotel"]
+[mbe_gigs show_artist="no" empty="Nothing booked just now — check back soon."]
+```
+
+| Attribute | Default | |
+|---|---|---|
+| `direction` | `upcoming` | `upcoming`, `past` or `all` |
+| `limit` | `-1` | Number of gigs, `-1` for all |
+| `order` | auto | `asc` or `desc`; defaults to soonest-first for upcoming, most-recent-first for past |
+| `venue` | — | Venue slug or term ID |
+| `artist` | — | Artist slug or term ID |
+| `show_artist` | `auto` | `auto` prints the artist only on sites with more than one |
+| `date_format` | site setting | Any PHP date format |
+| `empty` | — | Message when there are no gigs |
+| `class` | — | Extra class on the wrapper |
+
+Drop it into a Themer archive layout in an HTML or Text module. Beaver Builder's Posts
+module renders each item with its own markup and can't lay a gig out from its fields,
+so a ticket button, a start time and a cancelled badge can't be separate elements
+there. This can.
+
+**It ships no CSS.** What comes out is semantic markup with predictable classes; how a
+site looks is per-site work, which is the part that should differ between a country act
+and a pub rock band. Empty fields are omitted rather than rendered blank, so no
+stylesheet has to hide an empty element.
+
+```
+div.mbe-gigs.mbe-gigs--upcoming
+  ul.mbe-gigs__list
+    li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --multi-day)
+      time.mbe-gig__date
+        span.mbe-gig__weekday  Thu
+        span.mbe-gig__day      19
+        span.mbe-gig__month    Nov
+        span.mbe-gig__year     2026
+        span.mbe-gig__date-full
+      time.mbe-gig__end-date                 (multi-day only)
+      div.mbe-gig__details
+        p.mbe-gig__artist                    (multi-artist sites only)
+        p.mbe-gig__venue                     (linked when archives are on)
+        p.mbe-gig__location
+        p.mbe-gig__time
+        p.mbe-gig__tour
+        p.mbe-gig__price
+        p.mbe-gig__status                    (only when not scheduled)
+        div.mbe-gig__description
+      p.mbe-gig__actions
+        a.mbe-gig__tickets
+```
+
+The date parts exist so a calendar-tile date block is pure CSS — stack the weekday, day
+and month, hide `__date-full`; or show `__date-full` and hide the parts. No PHP either way.
+
+Starter CSS to paste into the Themer layout's CSS panel and then make your own:
+
+```css
+.mbe-gigs__list { list-style: none; margin: 0; padding: 0; }
+.mbe-gig { display: flex; gap: 1.25rem; align-items: flex-start;
+           padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,.1); }
+.mbe-gig__date { flex: 0 0 4.5rem; text-align: center; line-height: 1.1; }
+.mbe-gig__weekday, .mbe-gig__month { display: block; font-size: .75rem;
+           text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+.mbe-gig__day { display: block; font-size: 1.9rem; font-weight: 700; }
+.mbe-gig__year, .mbe-gig__date-full { display: none; }
+.mbe-gig__details { flex: 1 1 auto; }
+.mbe-gig__venue { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.mbe-gig__location, .mbe-gig__time, .mbe-gig__tour, .mbe-gig__price { margin: .15rem 0 0; opacity: .8; }
+.mbe-gig__status { display: inline-block; margin: .4rem 0 0; padding: .15rem .5rem;
+           border-radius: 2px; font-size: .8rem; text-transform: uppercase;
+           background: #f7dcdc; color: #8a1f1f; }
+.mbe-gig--cancelled .mbe-gig__venue { text-decoration: line-through; }
+.mbe-gig__actions { flex: 0 0 auto; margin: 0; }
+```
+
 ## Beaver Themer
 
 Field connections appear under **Post** as "Gig: date", "Gig: venue and location",
