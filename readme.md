@@ -32,6 +32,12 @@ you rebuild the display and the content is untouched.
 
 **Post type:** `mbe_gig` — `show_in_rest`, archive at `/gigs/`.
 
+Individual gigs have **no page of their own** by default: a gig URL redirects to the
+archive, gigs stay out of the sitemap and out of site search. GigPress had no per-gig
+pages either, nothing links to one, and a gig carrying a date and a venue makes a
+threadbare page. `mbe_gigs_single_enabled` turns them on for a site that wants a
+shareable link per date — that site then needs a Themer singular layout to go with it.
+
 **Taxonomies:** `mbe_venue`, `mbe_artist` — non-hierarchical, `show_in_rest`.
 
 **Post meta**
@@ -122,6 +128,9 @@ add_filter( 'mbe_gigs_archives_enabled', '__return_false' );
 // URL slugs.
 add_filter( 'mbe_gigs_rewrite_slug', function () { return 'shows'; } );
 add_filter( 'mbe_gigs_venue_slug',   function () { return 'venues'; } );
+
+// Give each gig a page of its own (off by default — see below).
+add_filter( 'mbe_gigs_single_enabled', '__return_true' );
 
 // Put gigs back in the block editor.
 add_filter( 'mbe_gigs_use_block_editor', '__return_true' );

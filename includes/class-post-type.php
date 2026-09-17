@@ -17,6 +17,8 @@ class MBE_Gigs_Post_Type {
 	 * Hooks that do not depend on registration order.
 	 */
 	public static function hooks() {
+		add_action( 'template_redirect', array( __CLASS__, 'disable_single' ) );
+		add_filter( 'wp_sitemaps_post_types', array( __CLASS__, 'sitemap_post_types' ) );
 		add_filter( 'wp_insert_post_empty_content', array( __CLASS__, 'allow_empty_content' ), 10, 2 );
 		add_filter( 'wp_insert_post_data', array( __CLASS__, 'auto_title' ), 10, 2 );
 		add_filter( 'use_block_editor_for_post_type', array( __CLASS__, 'editor' ), 10, 2 );
@@ -101,6 +103,8 @@ class MBE_Gigs_Post_Type {
 					'item_updated'          => __( 'Gig updated.', 'mbe-gigs' ),
 				),
 				'public'             => true,
+				// Nothing to land on when singles are off, so keep gigs out of search.
+				'exclude_from_search' => ! self::single_enabled(),
 				'show_ui'            => true,
 				'show_in_menu'       => true,
 				'show_in_rest'       => true,
@@ -198,6 +202,62 @@ class MBE_Gigs_Post_Type {
 					: false,
 			)
 		);
+	}
+
+	/**
+	 * Whether a gig gets a page of its own.
+	 *
+	 * Off by default. GigPress never had per-gig pages, nothing links to one, and a
+	 * gig carrying a date and a venue makes a threadbare page — while building and
+	 * restyling a singular layout across eight sites is real work for something
+	 * nobody has asked for.
+	 *
+	 * To turn them on for a site that wants shareable links for each date:
+	 *
+	 *     add_filter( 'mbe_gigs_single_enabled', '__return_true' );
+	 *
+	 * @return bool
+	 */
+	public static function single_enabled() {
+		return (bool) apply_filters( 'mbe_gigs_single_enabled', false );
+	}
+
+	/**
+	 * Send a gig URL to the gig list.
+	 *
+	 * Not a 404. WordPress keeps generating these URLs whatever we do — the admin's
+	 * View and Preview buttons, search results, anything a person pasted into a post
+	 * — and an admin screen linking to a dead page is worse than either answer. So
+	 * the page doesn't exist, and asking for it lands you somewhere useful.
+	 *
+	 * 302, not 301: this is a per-site choice that might change, and a permanent
+	 * redirect would sit in visitors' browsers long after it stopped being true.
+	 */
+	public static function disable_single() {
+		if ( self::single_enabled() || ! is_singular( MBE_GIGS_CPT ) ) {
+			return;
+		}
+
+		$archive = get_post_type_archive_link( MBE_GIGS_CPT );
+
+		if ( $archive ) {
+			wp_safe_redirect( $archive, 302 );
+			exit;
+		}
+	}
+
+	/**
+	 * Keep gigs out of the sitemap when they have no page to land on.
+	 *
+	 * @param array $post_types Post types in the sitemap.
+	 * @return array
+	 */
+	public static function sitemap_post_types( $post_types ) {
+		if ( ! self::single_enabled() ) {
+			unset( $post_types[ MBE_GIGS_CPT ] );
+		}
+
+		return $post_types;
 	}
 
 	/**
