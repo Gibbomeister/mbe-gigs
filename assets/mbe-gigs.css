@@ -1,0 +1,276 @@
+/*
+ * MBE Gigs — structure only.
+ *
+ * This stylesheet lays gigs out. It does not decide how they look.
+ *
+ * No font families, no font sizes in pixels, no colours of its own. Rules that need
+ * a line or a tint derive it from `currentColor`, so they pick up whatever the theme
+ * already set. Every selector is a single class, so a site rule overrides it without
+ * a specificity fight.
+ *
+ * That discipline is the whole point: a plugin stylesheet that sets type and colour is
+ * one every theme has to fight. One that only handles alignment is one nobody notices.
+ *
+ * Per-site work belongs in the theme or the Themer layout — brand colour on the ticket
+ * link, a font weight, spacing to match the page. Turn this off entirely with
+ * [mbe_gigs css="no"] or add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
+ */
+
+/* ---------------------------------------------------------------------------
+ * Shared
+ * ------------------------------------------------------------------------ */
+
+.mbe-gigs__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.mbe-gigs__empty {
+	margin: 0;
+	opacity: .75;
+}
+
+.mbe-gig__dates {
+	white-space: nowrap;
+}
+
+.mbe-gig__venue {
+	font-weight: 600;
+}
+
+.mbe-gig__extra > * {
+	margin-right: .5em;
+}
+
+.mbe-gig__tickets {
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: .03em;
+	white-space: nowrap;
+}
+
+.mbe-gigs__tour-label {
+	opacity: .6;
+	font-weight: 400;
+}
+
+.mbe-gig--cancelled .mbe-gig__venue,
+.mbe-gig--postponed .mbe-gig__venue {
+	text-decoration: line-through;
+}
+
+.mbe-gig__status {
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: .03em;
+}
+
+.mbe-gigs--past .mbe-gig__extra {
+	opacity: .75;
+}
+
+/* ---------------------------------------------------------------------------
+ * Aligned columns — the default
+ *
+ * A grid rather than a table. `display: contents` dissolves each row so its cells
+ * become the grid's own children, which is what lets dates, cities and venues line
+ * up down the page.
+ *
+ * Columns are spaced with padding, never column-gap: a gap cannot be painted, and the
+ * tour tint below has to run continuously across a row.
+ * ------------------------------------------------------------------------ */
+
+.mbe-gigs--table .mbe-gigs__list {
+	display: grid;
+	grid-template-columns: max-content max-content 1fr;
+	align-items: baseline;
+}
+
+.mbe-gigs--table.mbe-gigs--with-artist .mbe-gigs__list {
+	grid-template-columns: max-content max-content max-content 1fr;
+}
+
+.mbe-gigs--table .mbe-gig {
+	display: contents;
+}
+
+.mbe-gigs--table .mbe-gig__dates,
+.mbe-gigs--table .mbe-gig__artist,
+.mbe-gigs--table .mbe-gig__location,
+.mbe-gigs--table .mbe-gig__venue {
+	margin: 0;
+	padding: .6em 1.5em .1em 0;
+}
+
+.mbe-gigs--table .mbe-gig__venue {
+	padding-right: .75em;
+}
+
+/* One line per date rather than a calendar tile. */
+.mbe-gigs--table .mbe-gig__weekday,
+.mbe-gigs--table .mbe-gig__day,
+.mbe-gigs--table .mbe-gig__month,
+.mbe-gigs--table .mbe-gig__year {
+	display: none;
+}
+
+.mbe-gigs--table .mbe-gig__date-full {
+	display: inline;
+}
+
+.mbe-gigs--table .mbe-gig__end-date::before {
+	content: " – ";
+}
+
+.mbe-gigs--table .mbe-gig__extra {
+	grid-column: 1 / -1;
+	margin: 0;
+	padding: .1em .75em .6em 0;
+	font-size: .92em;
+	border-bottom: 1px solid rgba(0, 0, 0, .1);
+	border-bottom-color: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+/* GigPress's "Time: 8:30 pm. Address: 119 Victoria Rd." reading. */
+.mbe-gigs--table .mbe-gig__label::after {
+	content: ":";
+}
+
+.mbe-gigs--table .mbe-gig__extra > span::after {
+	content: ".";
+}
+
+.mbe-gigs--table .mbe-gigs__tour {
+	grid-column: 1 / -1;
+	margin: 0;
+	padding: .7em .75em .55em;
+	font-weight: 700;
+	background: rgba(0, 0, 0, .07);
+	background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.mbe-gigs--table .mbe-gig--in-tour > * {
+	background: rgba(0, 0, 0, .03);
+	background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+.mbe-gigs--table .mbe-gig--in-tour > :first-child,
+.mbe-gigs--table .mbe-gig--in-tour > .mbe-gig__extra {
+	padding-left: .75em;
+}
+
+/* A three-column grid is unreadable on a phone. */
+@media (max-width: 600px) {
+	.mbe-gigs--table .mbe-gigs__list,
+	.mbe-gigs--table.mbe-gigs--with-artist .mbe-gigs__list {
+		grid-template-columns: 1fr;
+	}
+
+	.mbe-gigs--table .mbe-gig__dates,
+	.mbe-gigs--table .mbe-gig__artist,
+	.mbe-gigs--table .mbe-gig__location,
+	.mbe-gigs--table .mbe-gig__venue {
+		padding: 0 .75em 0 0;
+	}
+
+	.mbe-gigs--table .mbe-gig__dates {
+		padding-top: .9em;
+		font-weight: 600;
+	}
+
+	.mbe-gigs--table .mbe-gig--in-tour > * {
+		padding-left: .75em;
+	}
+}
+
+/* ---------------------------------------------------------------------------
+ * Calendar tiles — [mbe_gigs layout="tiles"]
+ * ------------------------------------------------------------------------ */
+
+.mbe-gigs--tiles .mbe-gig {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 1.25em;
+	align-items: flex-start;
+	padding: 1em 0;
+	border-bottom: 1px solid rgba(0, 0, 0, .1);
+	border-bottom-color: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.mbe-gigs--tiles .mbe-gig__dates {
+	flex: 0 0 4.5em;
+	text-align: center;
+	line-height: 1.1;
+}
+
+.mbe-gigs--tiles .mbe-gig__weekday,
+.mbe-gigs--tiles .mbe-gig__month {
+	display: block;
+	font-size: .75em;
+	text-transform: uppercase;
+	letter-spacing: .06em;
+	opacity: .7;
+}
+
+.mbe-gigs--tiles .mbe-gig__day {
+	display: block;
+	font-size: 1.9em;
+	font-weight: 700;
+}
+
+.mbe-gigs--tiles .mbe-gig__year,
+.mbe-gigs--tiles .mbe-gig__date-full {
+	display: none;
+}
+
+/* Past gigs span years, so the year earns its place there. */
+.mbe-gigs--tiles.mbe-gigs--past .mbe-gig__year {
+	display: block;
+	font-size: .75em;
+	opacity: .7;
+}
+
+.mbe-gigs--tiles .mbe-gig__end-date::before {
+	content: "–";
+	display: block;
+	opacity: .5;
+}
+
+.mbe-gigs--tiles .mbe-gig__end-date .mbe-gig__weekday {
+	display: none;
+}
+
+.mbe-gigs--tiles .mbe-gig__artist,
+.mbe-gigs--tiles .mbe-gig__location,
+.mbe-gigs--tiles .mbe-gig__venue {
+	margin: 0;
+	flex: 1 1 100%;
+}
+
+.mbe-gigs--tiles .mbe-gig__venue {
+	order: -1;
+	font-size: 1.1em;
+}
+
+.mbe-gigs--tiles .mbe-gig__extra {
+	flex: 1 1 100%;
+	margin: .25em 0 0;
+	font-size: .92em;
+}
+
+/* Labels are noise under a big date tile. */
+.mbe-gigs--tiles .mbe-gig__label {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.mbe-gigs--tiles .mbe-gigs__tour {
+	padding: .9em 0 .2em;
+	font-weight: 700;
+}

@@ -5,8 +5,8 @@ Gig listings as a proper custom post type. Replaces GigPress.
 Venues and artists are taxonomies, so they deduplicate at the database level and get
 autocomplete and archive pages for free. Gig detail is post meta, registered through
 `register_post_meta` so it reaches REST and any future front end. The front end is one
-shortcode that emits semantic markup and no styling, placed in a Beaver Themer layout
-and styled per site.
+shortcode that drops into any page and a stylesheet that lays it out without touching
+the site's fonts or colours.
 
 **The one rule:** the post type, the taxonomies and the meta are registered here and
 only here. Never in a child theme, never in Themer. If a site leaves Beaver Builder,
@@ -25,6 +25,7 @@ you rebuild the display and the content is untouched.
 | `includes/class-query.php` | Upcoming/past queries, archive filtering, display helpers |
 | `includes/class-themer.php` | Themer field connections and loop query args |
 | `includes/class-shortcode.php` | The `[mbe_gigs]` list |
+| `assets/mbe-gigs.css` | Layout for that list — structure only, no fonts or colours |
 | `includes/class-updater.php` | Update checks against GitHub releases |
 | `includes/class-importer.php` | WP-CLI GigPress import |
 
@@ -163,23 +164,57 @@ Flush permalinks after changing any slug or archive filter: **Settings → Perma
 | `venue_link` | `archive` | `archive`, `website` or `none` |
 | `map` | `yes` | Link the address to Google Maps |
 | `tickets_label` | `Tickets` | Text on the ticket link |
+| `layout` | `table` | `table` for aligned columns, `tiles` for calendar-tile dates |
 | `date_format` | site setting | Any PHP date format |
 | `empty` | — | Message when there are no gigs |
 | `class` | — | Extra class on the wrapper |
 
-Drop it into a Themer archive layout in an HTML or Text module. Beaver Builder's Posts
-module renders each item with its own markup and can't lay a gig out from its fields,
-so a ticket button, a start time and a cancelled badge can't be separate elements
-there. This can.
+Drop it into any page — including the client's existing Gigs page, in place of the old
+GigPress shortcode. It doesn't need a Themer layout and it doesn't need the gig archive.
+Beaver Builder's Posts module can't be used for this: it renders each item with its own
+markup and offers no way to lay a gig out from its fields, so a ticket link, a start time
+and a cancelled badge could not be separate elements there at all.
 
-**It ships no CSS.** What comes out is semantic markup with predictable classes; how a
-site looks is per-site work, which is the part that should differ between a country act
-and a pub rock band. Optional details are omitted when empty, so a stylesheet never has
-to hide a blank line — the exceptions are the three grid cells noted below, which always
-render because a column with a hole in it stops being a column.
+### Styling
+
+`assets/mbe-gigs.css` ships with the plugin and loads on every front-end page, so a gig
+list looks right the moment the shortcode is placed. Two layouts, chosen with the
+`layout` attribute:
+
+- **`table`** (default) — aligned Date / City / Venue columns with the details on one
+  line underneath. A CSS grid, not a table.
+- **`tiles`** — a calendar-tile date on the left, everything stacked beside it.
+
+The stylesheet does **structure only**: no font families, no pixel font sizes, no colours
+of its own. Anything needing a line or a tint derives it from `currentColor`, so it picks
+up whatever the theme already set, and every selector is a single class so a site rule
+wins without a specificity fight. A plugin stylesheet that sets type and colour is one
+every theme has to fight; one that only handles alignment is one nobody notices.
+
+Per-site work is then small — brand colour on the ticket link, a font weight, spacing to
+match the page — and belongs in the theme or the Themer layout CSS:
+
+```css
+.mbe-gig__tickets { color: #c0392b; }
+.mbe-gig__venue   { font-size: 1.15em; }
+```
+
+To start from nothing and write it all yourself:
+
+```php
+add_filter( 'mbe_gigs_enqueue_styles', '__return_false' );
+```
+
+It loads on every page rather than only where the shortcode appears. That optimisation
+can't work here: on these sites the shortcode lives inside a Beaver Builder module or a
+Themer layout rather than in `post_content`, so `has_shortcode()` finds nothing and the
+style would either be missed or arrive after the list had painted. It is two kilobytes
+of layout rules.
+
+### The markup
 
 ```
-div.mbe-gigs.mbe-gigs--upcoming[.mbe-gigs--with-artist]
+div.mbe-gigs.mbe-gigs--upcoming.mbe-gigs--table[.mbe-gigs--with-artist]
   ul.mbe-gigs__list
     li.mbe-gigs__tour                        (above each run of gigs on one tour)
       span.mbe-gigs__tour-label  Tour:
@@ -215,105 +250,14 @@ to line up. Flat markup is what makes aligned columns possible without a table.
 `.mbe-gig__location` and `.mbe-gig__venue` render even when empty, and `.mbe-gig__extra`
 always renders. A grid column with a hole in it stops being a column.
 
-The date is emitted both split into parts and whole, so the same markup gives a
-calendar tile or a single line depending only on which you hide.
+The date is emitted both split into parts and whole, so the same markup gives a calendar
+tile or a single line depending only on which you hide.
 
-### Aligned columns, the GigPress look
-
-Paste into the Themer layout's CSS panel. Date, city and venue line up down the page;
-time, address, notes and tickets share one line underneath.
-
-```css
-.mbe-gigs__list { list-style: none; margin: 0; padding: 0;
-    display: grid; grid-template-columns: max-content max-content 1fr;
-    align-items: baseline; }
-.mbe-gigs--with-artist .mbe-gigs__list {
-    grid-template-columns: max-content max-content max-content 1fr; }
-
-/* Rows dissolve so their cells become the grid's own children. */
-.mbe-gig { display: contents; }
-
-/* Column spacing is padding, not column-gap. A gap cannot be painted, and the
-   tour banding below needs a continuous band across the row. */
-.mbe-gig__dates, .mbe-gig__artist, .mbe-gig__location, .mbe-gig__venue {
-    margin: 0; padding: .6rem 1.5rem .1rem 0; }
-.mbe-gig__dates { white-space: nowrap; }
-.mbe-gig__venue { font-weight: 600; padding-right: .75rem; }
-
-/* One line per date rather than a calendar tile. */
-.mbe-gig__weekday, .mbe-gig__day, .mbe-gig__month, .mbe-gig__year { display: none; }
-.mbe-gig__date-full { display: inline; }
-.mbe-gig__end-date::before { content: " – "; }
-
-/* The secondary line, spanning every column. */
-.mbe-gig__extra { grid-column: 1 / -1; margin: 0; padding: .1rem .75rem .6rem 0;
-    font-size: .92em; opacity: .85;
-    border-bottom: 1px solid rgba(0,0,0,.08); }
-.mbe-gig__extra > * { margin-right: .5rem; }
-.mbe-gig__label::after { content: ":"; }
-.mbe-gig__extra > span::after { content: "."; }
-.mbe-gig__tickets { font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
-
-/* Tours: a heading band, and a tint on the dates it covers. */
-.mbe-gigs__tour { grid-column: 1 / -1; margin: 0; padding: .7rem .75rem .55rem;
-    font-weight: 700; background: #e8e8ec; }
-.mbe-gigs__tour-label { opacity: .6; font-weight: 400; }
-.mbe-gig--in-tour > * { background: #f5f5f8; }
-.mbe-gig--in-tour > :first-child { padding-left: .75rem; }
-.mbe-gig--in-tour > .mbe-gig__extra { padding-left: .75rem; }
-
-.mbe-gig--cancelled .mbe-gig__venue { text-decoration: line-through; }
-.mbe-gigs--past .mbe-gig__extra { opacity: .7; }
-
-/* One column on a phone — a three-column grid is unreadable at 380px. */
-@media (max-width: 600px) {
-    .mbe-gigs__list, .mbe-gigs--with-artist .mbe-gigs__list { grid-template-columns: 1fr; }
-    .mbe-gig__dates, .mbe-gig__artist, .mbe-gig__location, .mbe-gig__venue { padding-top: 0; }
-    .mbe-gig__dates { padding-top: .8rem; font-weight: 600; }
-    .mbe-gig--in-tour > :first-child,
-    .mbe-gig--in-tour > * { padding-left: .75rem; }
-}
-```
-
-The tour tint has to be painted on the cells rather than the row: `display: contents`
-removes the row's own box, so `.mbe-gig--in-tour { background: … }` would do nothing at
-all. That is also why the columns are spaced with padding instead of `column-gap` — a
-gap has no background to set, so a banded row would come out striped.
-
-To drop the labels — "8:30 pm" rather than "Time: 8:30 pm" — remove the
-`.mbe-gig__label::after` rule and hide the labels instead:
-
-```css
-.mbe-gig__label { position: absolute; width: 1px; height: 1px;
-    overflow: hidden; clip: rect(0 0 0 0); }
-```
-
-### Calendar tiles, stacked
-
-The other direction: a big date tile on the left, everything stacked beside it. Same
-markup, different CSS.
-
-```css
-.mbe-gigs__list { list-style: none; margin: 0; padding: 0; }
-.mbe-gig { display: flex; flex-wrap: wrap; gap: 0 1.25rem; align-items: flex-start;
-    padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,.1); }
-.mbe-gig__dates { flex: 0 0 4.5rem; text-align: center; line-height: 1.1; }
-.mbe-gig__weekday, .mbe-gig__month { display: block; font-size: .75rem;
-    text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
-.mbe-gig__day { display: block; font-size: 1.9rem; font-weight: 700; }
-.mbe-gig__year, .mbe-gig__date-full { display: none; }
-.mbe-gig__end-date::before { content: "–"; display: block; opacity: .5; }
-.mbe-gig__end-date .mbe-gig__weekday { display: none; }
-.mbe-gigs--past .mbe-gig__year { display: block; font-size: .75rem; opacity: .7; }
-.mbe-gig__artist, .mbe-gig__location, .mbe-gig__venue { margin: 0; flex: 1 1 100%; }
-.mbe-gig__venue { order: -1; font-size: 1.1rem; font-weight: 600; }
-.mbe-gig__extra { flex: 1 1 100%; margin: .2rem 0 0; font-size: .92em; opacity: .85; }
-.mbe-gig__extra > * { margin-right: .5rem; }
-.mbe-gig__label { position: absolute; width: 1px; height: 1px;
-    overflow: hidden; clip: rect(0 0 0 0); }
-.mbe-gigs__tour { padding: .8rem 0 .2rem; font-weight: 700; }
-.mbe-gigs__tour-label { opacity: .6; font-weight: 400; }
-```
+In the `table` layout the row is dissolved with `display: contents` so its cells become
+the grid's own children. Two consequences worth knowing before writing CSS against it:
+there is no row box to paint, so backgrounds go on the cells; and columns are spaced
+with padding rather than `column-gap`, because a gap can't be painted and the tour tint
+has to run continuously across a row.
 
 ## Beaver Themer
 
@@ -385,14 +329,18 @@ deactivating GigPress and leaving its tables in place.
 
 ## Per-site rollout
 
-1. Back up. Work on staging.
-2. Install and activate MBE Gigs.
-3. `wp mbe-gigs inspect`, then `--dry-run`, then import.
-4. Spot-check the gig list in admin, sorted by gig date.
-5. Build the Themer layout for the gig archive, and a singular layout if the site needs one.
-6. Replace the old GigPress shortcode or widget on the gigs page.
-7. Deactivate GigPress. Leave the tables.
-8. Check permalinks, then push staging to live following the usual procedure.
+1. Back up. Pull live to staging. Work on staging.
+2. Install and activate MBE Gigs. Settings → Permalinks → Save.
+3. `wp mbe-gigs inspect`, then `--dry-run`, then import with that site's `--venues=` file.
+4. Spot-check in admin: gig count matches inspect minus deleted, nothing in `future`
+   status, venues carry city and state.
+5. On the site's existing Gigs page, replace the GigPress shortcode with `[mbe_gigs]`.
+   The page keeps its own design; no Themer layout is needed.
+6. Add `[mbe_gigs direction="past" limit="10"]` below it if the band wants a history.
+7. Any per-site styling — brand colour on the ticket link, spacing — in the theme CSS.
+8. Deactivate GigPress. **Leave its tables** — that is the rollback.
+9. Post-push checks: permalinks, and Settings → Reading → Discourage search engines.
+10. Push staging to live following the usual procedure. Log it in the site brief.
 
 ## Releasing
 

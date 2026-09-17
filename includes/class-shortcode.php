@@ -11,11 +11,14 @@
  * the gig's own fields. Without this, a ticket button, a start time and a cancelled
  * badge could not be separate elements on an archive at all.
  *
- * It ships NO styling, deliberately. What it produces is semantic markup with
- * predictable class names; how a site looks stays a per-site job done in CSS, which
- * is the part that should differ between a country act and a pub rock band. Empty
- * fields are omitted entirely rather than rendered blank, so no stylesheet ever has
- * to hide an empty element.
+ * The markup is semantic and class-heavy, and assets/mbe-gigs.css lays it out —
+ * structure only, no fonts or colours of its own, so a site overrides it with a handful
+ * of rules rather than fighting it. A site that wants to start from nothing turns it
+ * off with add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
+ *
+ * Optional details are omitted when empty rather than rendered blank, so a stylesheet
+ * never has to hide an empty element — except the three grid cells that must always
+ * render, because a column with a hole in it stops being a column.
  *
  * @package MBE_Gigs
  */
@@ -26,6 +29,37 @@ class MBE_Gigs_Shortcode {
 
 	public static function hooks() {
 		add_shortcode( 'mbe_gigs', array( __CLASS__, 'render' ) );
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ) );
+	}
+
+	/**
+	 * Whether the shipped stylesheet loads on this site.
+	 *
+	 *     add_filter( 'mbe_gigs_enqueue_styles', '__return_false' );
+	 *
+	 * @return bool
+	 */
+	public static function styles_enabled() {
+		return (bool) apply_filters( 'mbe_gigs_enqueue_styles', true );
+	}
+
+	/**
+	 * Load the stylesheet.
+	 *
+	 * On every front-end page, deliberately. The obvious optimisation — only load it
+	 * where the shortcode appears — cannot work here: on these sites the shortcode
+	 * lives inside a Beaver Builder module or a Themer layout, not in post_content,
+	 * so has_shortcode() finds nothing and the style would either be missed entirely
+	 * or enqueued too late and arrive after the list had already painted.
+	 *
+	 * It is two kilobytes of layout rules. Correct everywhere beats clever.
+	 */
+	public static function enqueue() {
+		wp_register_style( 'mbe-gigs', MBE_GIGS_URL . 'assets/mbe-gigs.css', array(), MBE_GIGS_VERSION );
+
+		if ( self::styles_enabled() ) {
+			wp_enqueue_style( 'mbe-gigs' );
+		}
 	}
 
 	/**
@@ -46,6 +80,7 @@ class MBE_Gigs_Shortcode {
 				'venue_link'    => 'archive',
 				'map'           => 'yes',
 				'tickets_label' => __( 'Tickets', 'mbe-gigs' ),
+				'layout'        => 'table',
 				'date_format'   => '',
 				'empty'         => __( 'No gigs listed at the moment.', 'mbe-gigs' ),
 				'class'         => '',
@@ -64,7 +99,13 @@ class MBE_Gigs_Shortcode {
 			)
 		);
 
-		$classes = array( 'mbe-gigs', 'mbe-gigs--' . sanitize_html_class( $atts['direction'] ) );
+		$layout = in_array( $atts['layout'], array( 'table', 'tiles' ), true ) ? $atts['layout'] : 'table';
+
+		$classes = array(
+			'mbe-gigs',
+			'mbe-gigs--' . sanitize_html_class( $atts['direction'] ),
+			'mbe-gigs--' . $layout,
+		);
 
 		if ( $atts['class'] ) {
 			$classes[] = sanitize_html_class( $atts['class'] );
