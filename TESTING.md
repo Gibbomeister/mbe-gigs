@@ -227,6 +227,16 @@ start time and a cancelled badge can't be separate elements there at all.
       search, and until 2.2.1 that made every venue and artist archive a 404 — found on
       georgesich staging, 23 Sep 2026.
 - [ ] Artist archives the same way: `/artist/<slug>/` lists that act's gigs.
+- [ ] **Look at how the archive renders — open issue (georgesich, 23 Sep 2026).** With
+      2.2.1 the archive works, but the theme draws it as its ordinary blog archive: each
+      gig is a post heading with a "Read More" link. With single gig pages off, that link
+      goes to the gig URL, which redirects to `/gigs/` — and `/gigs/` shows upcoming
+      gigs only, so on a dormant site the visitor lands on "No gigs listed". Not the
+      plugin's list markup, not styled by `mbe-gigs.css`, and a dead end.
+      Options, undecided: render venue/artist archives through the `[mbe_gigs]` markup
+      (e.g. the plugin supplies the archive template or replaces the loop output); or
+      stop linking to single gigs from archives. Until then, sites use
+      `venue_link="none"` (georgesich does).
 
 ### The single gig page — decide before a client sees one
 

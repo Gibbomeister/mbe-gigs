@@ -199,6 +199,12 @@ is deactivated, or it will render as the literal text `[gigpress]` on a live pag
 Anything missing is a display decision, not lost data — check the gig in admin before
 assuming the import dropped it.
 
+- [ ] Click a venue name. Venue links go to the venue archive, which currently renders
+      as the theme's blog archive with dead-end "Read More" links (see `TESTING.md`,
+      "Venue and artist archives"). Until the plugin handles that, add
+      `venue_link="none"` to the shortcodes — or `venue_link="website"` if most of the
+      site's venues have one.
+
 ### 5. Switch over
 
 - [ ] Remove the GigPress shortcode from the page. **Before** deactivating the plugin,
