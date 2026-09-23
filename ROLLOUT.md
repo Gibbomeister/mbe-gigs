@@ -95,6 +95,31 @@ client's public site. There is no version of that which is acceptable.
 
 ---
 
+## One chat thread per site
+
+Start a fresh session for each site. The reason isn't tidiness: the most damaging
+mistake available here is working on the wrong site, look-alike staging URLs make it
+easy, and a thread covering eight sites is one where the connector check gets assumed
+rather than made — on site six, when it all feels routine.
+
+One thread means one connector enabled, one site brief in play, one staging URL
+confirmed. It also leaves a clean record to attach to that site's change log.
+
+Nothing is lost by starting over: the decisions are in memory, and this file, the readme
+and `TESTING.md` are in the repo.
+
+Paste this to open each one:
+
+> Rolling MBE Gigs onto **{site}** — site {n} of 8, replacing GigPress.
+>
+> Follow `ROLLOUT.md` in `MBE Projects/mbe-gigs`. Read that plus the site's
+> `site-brief.md` and `_common/site-editing-standards.md` before anything.
+>
+> Staging only, Procedure B. GridPane WP-CLI via `gp wp {site.url} …`. Confirm the
+> staging siteurl before running anything.
+
+---
+
 ## Before you start on a site
 
 - [ ] Read the site's `site-brief.md` and `_common/site-editing-standards.md`. The brief
