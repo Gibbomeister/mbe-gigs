@@ -30,6 +30,71 @@ AMHDB gig widget exists.
 
 ---
 
+## Running WP-CLI on GridPane
+
+GridPane locks SSH to root, but `wp` must **not** run as root — it creates root-owned
+files and breaks the site's permissions. Use their wrapper, which runs as the site's
+system user:
+
+```
+gp wp {site.url} {command}
+```
+
+**First command on every site, every time:**
+
+```
+gp wp staging.example.com option get siteurl
+```
+
+Confirm what comes back before running anything else. The difference between staging and
+live is one word in a command, and the importer pointed at live is the most damaging
+mistake available here. Print the URL, read it, then proceed.
+
+Test that flags survive the wrapper before relying on it:
+
+```
+gp wp staging.example.com plugin list --status=active
+```
+
+The alternative, if the wrapper misbehaves:
+
+```
+cd /var/www/staging.example.com/htdocs
+sudo -u {systemuser} wp {command}
+```
+
+### The venue worksheet
+
+`--venues=` needs the CSV on the server, which means scp'ing it up. **Five of the eight
+sites don't need it at all** — their worksheets have no rows requiring a decision, and
+state normalisation now happens automatically on import regardless.
+
+| Site | Rows needing a decision |
+|---|---:|
+| barryleef, bradmarks, georgesich, lawlessbreed, tedmulrygang | 0 — skip `--venues` |
+| merilynsteele | 4 |
+| peterpik | 6 |
+| rudymiranda | 7 |
+
+For the three with a handful, fixing them by hand in the Venues screen after importing is
+usually quicker than moving a file onto the server.
+
+### Novamira, optionally
+
+[Novamira](https://novamira.ai/) is an MCP server plugin that gives an AI agent WP-CLI,
+PHP and database access inside a WordPress install — which would let Claude run the
+inspect, read the dry-run log and check the counts directly rather than through
+copy-paste. Its own documentation says *"For dev and staging environments. With backups.
+Always."*, which matches this procedure.
+
+Needs WordPress 6.9+ and PHP 8.0+.
+
+**If you use it: deactivate and delete it before the push.** Staging goes to live
+wholesale, so a Novamira left installed becomes an arbitrary-PHP-execution endpoint on a
+client's public site. There is no version of that which is acceptable.
+
+---
+
 ## Before you start on a site
 
 - [ ] Read the site's `site-brief.md` and `_common/site-editing-standards.md`. The brief
@@ -42,20 +107,21 @@ the obvious place; the ones that catch people out are a sidebar widget, a second
 footer, or a "subscribe to our gigs" link pointing at GigPress's feed.
 
 ```
-wp post list --post_type=any --post_status=any --format=ids | \
-  xargs -n50 wp post get --field=content 2>/dev/null | grep -o '\[gigpress[^]]*\]' | sort | uniq -c
-wp option list --search='*gigpress*' --format=table
-wp widget list sidebar-1 --format=table
+gp wp staging.example.com post list --post_type=any --post_status=any --format=ids | \
+  xargs -n50 -I{} gp wp staging.example.com post get {} --field=content 2>/dev/null | \
+  grep -o '\[gigpress[^]]*\]' | sort | uniq -c
+gp wp staging.example.com option list --search='*gigpress*' --format=table
+gp wp staging.example.com widget list sidebar-1 --format=table
 ```
 
 Beaver Builder pages keep their content in post meta rather than `post_content`, so
 also:
 
 ```
-wp db query "SELECT post_id FROM wp_postmeta WHERE meta_key='_fl_builder_data' AND meta_value LIKE '%gigpress%';"
+gp wp staging.example.com db query "SELECT post_id FROM wp_postmeta WHERE meta_key='_fl_builder_data' AND meta_value LIKE '%gigpress%';"
 ```
 
-(`wp db query` may fail on Local; on GridPane it's fine.)
+(`wp db query` fails on Local — its MySQL socket is elsewhere — but works on GridPane.)
 
 Write down every place it appears. Each one needs replacing or removing before GigPress
 is deactivated, or it will render as the literal text `[gigpress]` on a live page.
@@ -63,6 +129,10 @@ is deactivated, or it will render as the literal text `[gigpress]` on a live pag
 ---
 
 ## The run
+
+### 0. Confirm which site you are on
+
+- [ ] `gp wp staging.example.com option get siteurl` — read what comes back.
 
 ### 1. Pull and back up
 
@@ -75,7 +145,7 @@ is deactivated, or it will render as the literal text `[gigpress]` on a live pag
 
 - [ ] Install and activate MBE Gigs from the latest GitHub release.
 - [ ] Settings → Permalinks → Save.
-- [ ] `wp mbe-gigs inspect`
+- [ ] `gp wp staging.example.com mbe-gigs inspect`
 
       Read all of it. Every table present, nothing important mapped to `(none)`, the
       deleted count, and the end-date line. If nearly every show "ends after it starts",
@@ -84,11 +154,12 @@ is deactivated, or it will render as the literal text `[gigpress]` on a live pag
 
 ### 3. Import
 
-- [ ] `wp mbe-gigs import --dry-run --limit=20`, read the log.
-- [ ] `wp mbe-gigs import --dry-run`, read the summary.
-- [ ] `wp mbe-gigs import --venues=/path/to/venues-<site>.csv`
+- [ ] `gp wp staging.example.com mbe-gigs import --dry-run --limit=20`, read the log.
+- [ ] `gp wp staging.example.com mbe-gigs import --dry-run`, read the summary.
+- [ ] `gp wp staging.example.com mbe-gigs import` — add `--venues=<path on the server>`
+      only for merilynsteele, peterpik or rudymiranda.
 - [ ] Created count = inspect's row count minus its deleted count.
-- [ ] `wp post list --post_type=mbe_gig --post_status=future --format=count` → **0**.
+- [ ] `gp wp staging.example.com post list --post_type=mbe_gig --post_status=future --format=count` → **0**.
       A gig in Scheduled status is invisible on the front end.
 
 ### 4. Compare, side by side
@@ -141,7 +212,7 @@ Restore the live backup. Then, on staging: reactivate GigPress, put its shortcod
 and work out what happened before trying again. The GigPress tables were never touched,
 so nothing has been lost either way.
 
-`wp mbe-gigs rollback --yes` removes exactly what the importer created and nothing else
+`gp wp staging.example.com mbe-gigs rollback --yes` removes exactly what the importer created and nothing else
 — useful on staging, and never needed on live if the backup is good.
 
 ---
