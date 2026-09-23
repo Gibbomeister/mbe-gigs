@@ -289,6 +289,17 @@ class MBE_Gigs_Query {
 		}
 
 		/*
+		 * Venue and artist archives must name the gig post type. A taxonomy query
+		 * with no post_type searches "any", and WordPress leaves out every type
+		 * registered with exclude_from_search — which gigs are whenever single gig
+		 * pages are off (the default since 2.1.0). Without this, every venue and
+		 * artist archive finds nothing and returns a 404.
+		 */
+		if ( $is_term_archive ) {
+			$query->set( 'post_type', MBE_GIGS_CPT );
+		}
+
+		/*
 		 * The gig archive is a "what's on" page, so it shows what's coming.
 		 *
 		 * A venue or artist archive is a different question — it's "this place" or

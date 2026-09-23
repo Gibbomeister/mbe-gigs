@@ -223,6 +223,10 @@ start time and a cancelled badge can't be separate elements there at all.
 - [ ] Click a venue. You get every gig at that venue, next booking first, then back
       through the history — not an empty page.
 - [ ] Click it from a **past** gig too. That's the case that was broken.
+- [ ] Check it with single gig pages **off** (the default). Gigs are then excluded from
+      search, and until 2.2.1 that made every venue and artist archive a 404 — found on
+      georgesich staging, 23 Sep 2026.
+- [ ] Artist archives the same way: `/artist/<slug>/` lists that act's gigs.
 
 ### The single gig page — decide before a client sees one
 
