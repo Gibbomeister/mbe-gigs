@@ -28,6 +28,8 @@ you rebuild the display and the content is untouched.
 | `assets/mbe-gigs.css` | Layout for that list — structure only, no fonts or colours |
 | `includes/class-updater.php` | Update checks against GitHub releases |
 | `includes/class-importer.php` | WP-CLI GigPress import |
+| `TESTING.md` | Checklist for proving a change before it ships |
+| `ROLLOUT.md` | Putting it on a client site |
 
 ## The data
 
