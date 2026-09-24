@@ -187,11 +187,18 @@ class MBE_Gigs_Term_Page {
 
 		$place = trim( $meta['city'] . ' ' . $meta['state'] . ' ' . $meta['postcode'] );
 		$place = preg_replace( '/\s+/', ' ', $place );
+
+		// Same rule as the gig list: the country only when it isn't the site's own.
+		if ( '' !== $meta['country'] && ! MBE_Gigs_Countries::is_home( $meta['country'] ) ) {
+			$place = trim( $place . ( '' !== $place ? ', ' : '' ) . MBE_Gigs_Countries::name( $meta['country'] ) );
+		}
+
+		$map_country = MBE_Gigs_Countries::name( $meta['country'] );
 		$items = array();
 
 		if ( '' !== $meta['address'] ) {
 			// Only the street is the link text; the rest steers the pin into the right town.
-			$query = implode( ', ', array_filter( array( $meta['address'], $meta['city'], $meta['state'], $meta['postcode'], $meta['country'] ) ) );
+			$query = implode( ', ', array_filter( array( $meta['address'], $meta['city'], $meta['state'], $meta['postcode'], $map_country ) ) );
 
 			$items[] = sprintf(
 				'<a class="mbe-gigs-term__address" href="%s" rel="noopener">%s</a>',

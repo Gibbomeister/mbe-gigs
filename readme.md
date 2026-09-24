@@ -25,6 +25,7 @@ you rebuild the display and the content is untouched.
 | `includes/class-term-page.php` + `templates/term.php` | Venue and artist pages |
 | `includes/class-query.php` | Upcoming/past queries, archive filtering, display helpers |
 | `includes/class-themer.php` | Themer field connections and loop query args |
+| `includes/class-countries.php` | Country code → name, and the home-country rule |
 | `includes/class-shortcode.php` | The `[mbe_gigs]` list |
 | `assets/mbe-gigs.css` | Layout for that list — structure only, no fonts or colours |
 | `includes/class-updater.php` | Update checks against GitHub releases |
@@ -166,6 +167,7 @@ Flush permalinks after changing any slug or archive filter: **Settings → Perma
 | `tour_label` | `Tour:` | Prefix on that heading |
 | `venue_link` | `archive` | `archive`, `website` or `none` |
 | `map` | `yes` | Link the address to Google Maps |
+| `country` | `auto` | Country after the city — `auto` shows it only for venues outside the home country (`mbe_gigs_home_country`, default `AU`), `yes` always, `no` never |
 | `tickets_label` | `Tickets` | Text on the ticket link |
 | `layout` | `table` | `table` for aligned columns, `tiles` for calendar-tile dates |
 | `date_format` | site setting | Any PHP date format |

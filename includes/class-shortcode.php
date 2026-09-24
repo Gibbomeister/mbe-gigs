@@ -79,6 +79,7 @@ class MBE_Gigs_Shortcode {
 				'tour_label'    => __( 'Tour:', 'mbe-gigs' ),
 				'venue_link'    => 'archive',
 				'map'           => 'yes',
+				'country'       => 'auto',
 				'tickets_label' => __( 'Tickets', 'mbe-gigs' ),
 				'layout'        => 'table',
 				'date_format'   => '',
@@ -260,6 +261,15 @@ class MBE_Gigs_Shortcode {
 		$city  = $venue ? (string) get_term_meta( $venue->term_id, 'mbe_venue_city', true ) : '';
 		$state = $venue ? (string) get_term_meta( $venue->term_id, 'mbe_venue_state', true ) : '';
 		$where = trim( $city . ( ( '' !== $city && '' !== $state ) ? ' ' : '' ) . $state );
+
+		// Country after the place, as GigPress did: "Riga, Latvia". "auto" leaves it off
+		// for the home country, so an all-Australian site doesn't print "Australia" on
+		// every row; "yes" always shows it, "no" never does.
+		$country = $venue ? (string) get_term_meta( $venue->term_id, 'mbe_venue_country', true ) : '';
+
+		if ( '' !== trim( $country ) && 'no' !== $atts['country'] && ( 'yes' === $atts['country'] || ! MBE_Gigs_Countries::is_home( $country ) ) ) {
+			$where = trim( $where . ( '' !== $where ? ', ' : '' ) . MBE_Gigs_Countries::name( $country ) );
+		}
 
 		$out .= sprintf( '<p class="mbe-gig__location">%s</p>', esc_html( $where ) );
 
@@ -456,6 +466,10 @@ class MBE_Gigs_Shortcode {
 
 		foreach ( array( 'mbe_venue_city', 'mbe_venue_state', 'mbe_venue_postcode', 'mbe_venue_country' ) as $key ) {
 			$value = (string) get_term_meta( $venue->term_id, $key, true );
+
+			if ( 'mbe_venue_country' === $key ) {
+				$value = MBE_Gigs_Countries::name( $value );
+			}
 
 			if ( '' !== trim( $value ) ) {
 				$parts[] = $value;
