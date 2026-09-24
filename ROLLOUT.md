@@ -199,11 +199,11 @@ is deactivated, or it will render as the literal text `[gigpress]` on a live pag
 Anything missing is a display decision, not lost data — check the gig in admin before
 assuming the import dropped it.
 
-- [ ] Click a venue name. Venue links go to the venue archive, which currently renders
-      as the theme's blog archive with dead-end "Read More" links (see `TESTING.md`,
-      "Venue and artist archives"). Until the plugin handles that, add
-      `venue_link="none"` to the shortcodes — or `venue_link="website"` if most of the
-      site's venues have one.
+- [ ] Click a venue name. From 2.3.0 it opens the plugin's venue page — venue details,
+      then upcoming and past gigs. Check one venue with a long history and one with a
+      single gig. If the site already publishes its own venue pages, use
+      `venue_link="website"` or `"none"` and turn archives off
+      (`mbe_gigs_archives_enabled`) instead.
 
 ### 5. Switch over
 

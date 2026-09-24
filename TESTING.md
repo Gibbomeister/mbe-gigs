@@ -220,23 +220,26 @@ start time and a cancelled badge can't be separate elements there at all.
 
 ### Venue and artist archives
 
-- [ ] Click a venue. You get every gig at that venue, next booking first, then back
-      through the history — not an empty page.
+- [ ] Click a venue. You get every gig at that venue — not an empty page.
 - [ ] Click it from a **past** gig too. That's the case that was broken.
 - [ ] Check it with single gig pages **off** (the default). Gigs are then excluded from
       search, and until 2.2.1 that made every venue and artist archive a 404 — found on
       georgesich staging, 23 Sep 2026.
 - [ ] Artist archives the same way: `/artist/<slug>/` lists that act's gigs.
-- [ ] **Look at how the archive renders — open issue (georgesich, 23 Sep 2026).** With
-      2.2.1 the archive works, but the theme draws it as its ordinary blog archive: each
-      gig is a post heading with a "Read More" link. With single gig pages off, that link
-      goes to the gig URL, which redirects to `/gigs/` — and `/gigs/` shows upcoming
-      gigs only, so on a dormant site the visitor lands on "No gigs listed". Not the
-      plugin's list markup, not styled by `mbe-gigs.css`, and a dead end.
-      Options, undecided: render venue/artist archives through the `[mbe_gigs]` markup
-      (e.g. the plugin supplies the archive template or replaces the loop output); or
-      stop linking to single gigs from archives. Until then, sites use
-      `venue_link="none"` (georgesich does).
+- [ ] **The page is the plugin's, not the theme's (2.3.0).** No post headings, no
+      "Read More". Venue name as the heading, then address (map link) · city state
+      postcode · Website, then "Played here N times, YYYY–YYYY".
+- [ ] **Upcoming** appears only when something is booked; **Past gigs** lists the history,
+      most recent first, in the same table markup as the Gigs page.
+- [ ] Venue names in the lists on a venue page are **not** links (they'd link to the
+      page you're on). On an artist page the artist column is hidden and venues link.
+- [ ] It sits inside the site: theme header, footer and content width. On the Beaver
+      Builder theme it uses the theme's own container.
+- [ ] A venue with 1–2 gigs has `<meta name="robots" content="noindex, follow">` and is
+      missing from `/wp-sitemap.xml` (or Yoast's sitemap). One with 3+ is indexable.
+- [ ] Assign a Themer archive layout to venues → Themer's layout wins. Remove it → the
+      plugin page comes back.
+- [ ] Phone width: the details line wraps cleanly and the lists collapse to one column.
 
 ### The single gig page — decide before a client sees one
 

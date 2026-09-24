@@ -22,6 +22,7 @@ you rebuild the display and the content is untouched.
 | `includes/class-post-type.php` | CPT + venue/artist taxonomies, automatic post titles |
 | `includes/class-meta.php` | Field definitions, sanitisation, REST, term meta screens |
 | `includes/class-admin.php` | The edit screen, list columns, sorting, filters |
+| `includes/class-term-page.php` + `templates/term.php` | Venue and artist pages |
 | `includes/class-query.php` | Upcoming/past queries, archive filtering, display helpers |
 | `includes/class-themer.php` | Themer field connections and loop query args |
 | `includes/class-shortcode.php` | The `[mbe_gigs]` list |
@@ -176,6 +177,48 @@ GigPress shortcode. It doesn't need a Themer layout and it doesn't need the gig 
 Beaver Builder's Posts module can't be used for this: it renders each item with its own
 markup and offers no way to lay a gig out from its fields, so a ticket link, a start time
 and a cancelled badge could not be separate elements there at all.
+
+### Venue and artist pages
+
+`/venue/<slug>/` and `/artist/<slug>/` are drawn by the plugin (`templates/term.php`),
+not the theme — a theme's blog archive would show each gig as a post with a "Read More"
+link to a single gig page that doesn't exist. The page is the theme's header and footer
+around:
+
+- the venue name, address (linked to Google Maps), city, state, postcode and website —
+  or the artist name
+- the term description, if one has been written
+- a summary: *Played here 14 times, 1978–2019*
+- **Upcoming** — only when something is booked
+- **Past gigs** — the whole history, most recent first
+
+Both lists are `[mbe_gigs]` output, so they share the Gigs page's markup and stylesheet.
+On a venue page the venue names aren't linked (they'd point at the same page); on an
+artist page the artist column is hidden.
+
+A Beaver Themer archive layout assigned to venues or artists takes over from the
+plugin page. Pages for venues with fewer than three gigs are marked `noindex, follow`
+and left out of the core and Yoast sitemaps — most venues on a band site have one or
+two gigs, and hundreds of near-empty pages do a site no favours in search.
+
+```php
+// Let the theme draw venue and artist pages again.
+add_filter( 'mbe_gigs_term_template', '__return_false' );
+
+// Calendar tiles, or any other [mbe_gigs] attribute, on these pages.
+add_filter( 'mbe_gigs_term_shortcode_atts', function ( $atts, $term, $direction ) {
+    $atts['layout'] = 'tiles';
+    return $atts;
+}, 10, 3 );
+
+// Index every venue and artist page (0 or 1), or raise the bar.
+add_filter( 'mbe_gigs_term_index_min', function () { return 1; } );
+
+// Reword the summary line.
+add_filter( 'mbe_gigs_term_summary', function ( $text, $term, $past_dates ) {
+    return $text;
+}, 10, 3 );
+```
 
 ### Styling
 
