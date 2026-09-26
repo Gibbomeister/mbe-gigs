@@ -111,11 +111,20 @@ class MBE_Gigs_Post_Type {
 				'menu_position'      => 21,
 				'menu_icon'          => 'dashicons-tickets-alt',
 				'hierarchical'       => false,
-				'has_archive'        => true,
-				'rewrite'            => array(
-					'slug'       => apply_filters( 'mbe_gigs_rewrite_slug', 'gigs' ),
-					'with_front' => false,
-				),
+				'has_archive'        => self::archive_enabled(),
+				/*
+				 * No rewrite rules at all unless something public needs them. With
+				 * singles and the archive both off (the default), a rule for
+				 * /gigs/<slug>/ would only shadow child pages of the site's own Gigs
+				 * page. Gig permalinks fall back to ?mbe_gig=<slug>, which
+				 * disable_single() still catches.
+				 */
+				'rewrite'            => ( self::single_enabled() || self::archive_enabled() )
+					? array(
+						'slug'       => self::rewrite_slug(),
+						'with_front' => false,
+					)
+					: false,
 				/*
 				 * No 'title'. The title is derived from artist, venue and date, so
 				 * WordPress's title box would be a field that has to be explained —
@@ -223,6 +232,61 @@ class MBE_Gigs_Post_Type {
 	}
 
 	/**
+	 * The URL base for gigs, and the slug of the page a gig URL redirects to.
+	 *
+	 * @return string
+	 */
+	public static function rewrite_slug() {
+		return (string) apply_filters( 'mbe_gigs_rewrite_slug', 'gigs' );
+	}
+
+	/**
+	 * Whether the gig post type gets an archive at /gigs/.
+	 *
+	 * Off by default since 2.3.2. The gig list lives on each site's own page via
+	 * [mbe_gigs], and most of those pages are at /gigs/ — where a post type archive
+	 * takes the URL over. WordPress matches the archive rule before it looks for a
+	 * page, so the site's Gigs page silently becomes an unstyled list of gigs, and
+	 * Beaver Builder can't open it because the editor loads at the page's URL.
+	 * Found on tedmulrygang.
+	 *
+	 * For a site that wants the archive (a Themer archive layout, say):
+	 *
+	 *     add_filter( 'mbe_gigs_archive_enabled', '__return_true' );
+	 *
+	 * Then Settings → Permalinks → Save.
+	 *
+	 * @return bool
+	 */
+	public static function archive_enabled() {
+		return (bool) apply_filters( 'mbe_gigs_archive_enabled', false );
+	}
+
+	/**
+	 * Where a gig URL sends people when gigs have no page of their own.
+	 *
+	 * The archive if it's on; otherwise the site's page at /gigs/ (or whatever
+	 * mbe_gigs_rewrite_slug returns); otherwise the home page.
+	 *
+	 * @return string
+	 */
+	public static function list_url() {
+		if ( self::archive_enabled() ) {
+			$archive = get_post_type_archive_link( MBE_GIGS_CPT );
+			if ( $archive ) {
+				return $archive;
+			}
+		}
+
+		$page = get_page_by_path( self::rewrite_slug() );
+		if ( $page && 'publish' === $page->post_status ) {
+			return get_permalink( $page );
+		}
+
+		return home_url( '/' );
+	}
+
+	/**
 	 * Send a gig URL to the gig list.
 	 *
 	 * Not a 404. WordPress keeps generating these URLs whatever we do — the admin's
@@ -238,12 +302,8 @@ class MBE_Gigs_Post_Type {
 			return;
 		}
 
-		$archive = get_post_type_archive_link( MBE_GIGS_CPT );
-
-		if ( $archive ) {
-			wp_safe_redirect( $archive, 302 );
-			exit;
-		}
+		wp_safe_redirect( apply_filters( 'mbe_gigs_single_redirect', self::list_url() ), 302 );
+		exit;
 	}
 
 	/**

@@ -4,7 +4,7 @@
  *
  * Left to the theme, /venue/<slug>/ renders as a blog archive: each gig a post
  * heading with a "Read More" link to a single gig page that doesn't exist (they're
- * off by default and redirect to /gigs/). Themer can't fix that for the same reason it
+ * off by default and redirect to the gig list). Themer can't fix that for the same reason it
  * can't lay out the main gig list — its Posts module has no way to build an item from
  * gig fields.
  *

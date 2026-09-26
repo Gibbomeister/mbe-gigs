@@ -3,7 +3,7 @@
  * Plugin Name:       MBE Gigs
  * Plugin URI:        https://mybusinessengine.com/
  * Description:       Gig listings as a custom post type, with venues and artists as taxonomies. Replaces GigPress.
- * Version:           2.3.1
+ * Version:           2.3.2
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            My Business Engine
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MBE_GIGS_VERSION', '2.3.1' );
+define( 'MBE_GIGS_VERSION', '2.3.2' );
 define( 'MBE_GIGS_FILE', __FILE__ );
 define( 'MBE_GIGS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'MBE_GIGS_URL', plugin_dir_url( __FILE__ ) );
@@ -83,6 +83,23 @@ function mbe_gigs_activate() {
 	add_option( 'mbe_gigs_version', MBE_GIGS_VERSION );
 }
 register_activation_hook( __FILE__, 'mbe_gigs_activate' );
+
+/**
+ * After an update: flush rewrites once, when the stored version changes.
+ *
+ * Updates through the GitHub updater don't run the activation hook, so a release
+ * that changes the rewrite rules (2.3.2 dropped the /gigs/ archive) would
+ * otherwise keep serving the old rules until someone saves Permalinks. One flush
+ * per version, not per page load.
+ */
+function mbe_gigs_maybe_flush_after_update() {
+	if ( get_option( 'mbe_gigs_version' ) === MBE_GIGS_VERSION ) {
+		return;
+	}
+	flush_rewrite_rules();
+	update_option( 'mbe_gigs_version', MBE_GIGS_VERSION );
+}
+add_action( 'init', 'mbe_gigs_maybe_flush_after_update', 99 );
 
 function mbe_gigs_deactivate() {
 	flush_rewrite_rules();

@@ -35,10 +35,10 @@ you rebuild the display and the content is untouched.
 
 ## The data
 
-**Post type:** `mbe_gig` — `show_in_rest`, archive at `/gigs/`.
+**Post type:** `mbe_gig` — `show_in_rest`. No archive by default (from 2.3.2): the archive at `/gigs/` took over sites whose own Gigs page lives there. Turn it on with `mbe_gigs_archive_enabled`.
 
 Individual gigs have **no page of their own** by default: a gig URL redirects to the
-archive, gigs stay out of the sitemap and out of site search. GigPress had no per-gig
+site's Gigs page (or the home page), gigs stay out of the sitemap and out of site search. GigPress had no per-gig
 pages either, nothing links to one, and a gig carrying a date and a venue makes a
 threadbare page. `mbe_gigs_single_enabled` turns them on for a site that wants a
 shareable link per date — that site then needs a Themer singular layout to go with it.
@@ -130,7 +130,11 @@ add_filter( 'mbe_gigs_loop_direction', function () { return 'past'; }, 10, 2 );
 // venue or artist pages and doesn't want a second URL competing with them.
 add_filter( 'mbe_gigs_archives_enabled', '__return_false' );
 
-// URL slugs.
+// Turn the gig post type archive back on (off from 2.3.2 — it takes over a Gigs
+// page at the same URL). Only for a site that uses a Themer archive layout.
+add_filter( 'mbe_gigs_archive_enabled', '__return_true' );
+
+// URL slugs. mbe_gigs_rewrite_slug is also the page a gig URL redirects to.
 add_filter( 'mbe_gigs_rewrite_slug', function () { return 'shows'; } );
 add_filter( 'mbe_gigs_venue_slug',   function () { return 'venues'; } );
 
