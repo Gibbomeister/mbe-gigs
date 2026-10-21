@@ -6,6 +6,7 @@
  *     wp mbe-gigs import --dry-run
  *     wp mbe-gigs import --venues=venues.csv --log=import.csv
  *     wp mbe-gigs rollback --yes
+ *     wp mbe-gigs tidy-localities --dry-run
  *
  * Three properties matter more than speed:
  *
@@ -420,6 +421,82 @@ class MBE_Gigs_Importer {
 		WP_CLI::success( sprintf( 'Removed %d gigs and their imported venues.', count( $ids ) ) );
 	}
 
+	/**
+	 * Title-case venue cities and states that were typed in all capitals.
+	 *
+	 * GigPress took the locality as free text, so one site can hold "NARRABEEN NSW"
+	 * beside "The Entrance NSW". Values that are entirely upper case are title-cased,
+	 * state codes (NSW, VIC, QLD, SA, WA, TAS, NT, ACT) stay upper case, and anything
+	 * already in mixed case is left exactly as it is. Safe to run more than once.
+	 *
+	 * Imports from 2.4.0 do this as they go; this is for sites migrated before that.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--dry-run]
+	 * : List the changes without saving them.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp mbe-gigs tidy-localities --dry-run
+	 *     wp mbe-gigs tidy-localities
+	 *
+	 * @subcommand tidy-localities
+	 */
+	public function tidy_localities( $args, $assoc_args ) {
+		$dry_run = (bool) WP_CLI\Utils\get_flag_value( $assoc_args, 'dry-run', false );
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => MBE_GIGS_TAX_VENUE,
+				'hide_empty' => false,
+			)
+		);
+
+		if ( is_wp_error( $terms ) ) {
+			WP_CLI::error( $terms->get_error_message() );
+		}
+
+		$changes = array();
+
+		foreach ( $terms as $term ) {
+			foreach ( array( 'mbe_venue_city' => 'city', 'mbe_venue_state' => 'state' ) as $key => $field ) {
+				$before = (string) get_term_meta( $term->term_id, $key, true );
+				$after  = MBE_Gigs_Meta::tidy_locality( $before );
+
+				if ( $after === $before ) {
+					continue;
+				}
+
+				$changes[] = array(
+					'term_id' => $term->term_id,
+					'venue'   => $term->name,
+					'field'   => $field,
+					'before'  => $before,
+					'after'   => $after,
+				);
+
+				if ( ! $dry_run ) {
+					update_term_meta( $term->term_id, $key, $after );
+				}
+			}
+		}
+
+		if ( ! $changes ) {
+			WP_CLI::success( sprintf( 'Checked %d venues. Nothing to tidy.', count( $terms ) ) );
+			return;
+		}
+
+		WP_CLI\Utils\format_items( 'table', $changes, array( 'term_id', 'venue', 'field', 'before', 'after' ) );
+
+		if ( $dry_run ) {
+			WP_CLI::success( sprintf( 'Dry run: %d values would change across %d venues. Nothing saved.', count( $changes ), count( $terms ) ) );
+			return;
+		}
+
+		WP_CLI::success( sprintf( 'Tidied %d values across %d venues.', count( $changes ), count( $terms ) ) );
+	}
+
 	/* ---------------------------------------------------------------------
 	 * Venues
 	 * ------------------------------------------------------------------ */
@@ -458,6 +535,11 @@ class MBE_Gigs_Importer {
 			$final_name  = $override['venue'] ? $override['venue'] : $name;
 			$final_city  = $override['city'] ? $override['city'] : $city;
 			$final_state = $override['state'] ? $override['state'] : ( $map['state'] ? trim( (string) $row[ $map['state'] ] ) : '' );
+
+			// "NARRABEEN NSW" -> "Narrabeen NSW". Matching is case-insensitive, so this
+			// still finds a venue an earlier run stored in capitals.
+			$final_city  = MBE_Gigs_Meta::tidy_locality( $final_city );
+			$final_state = MBE_Gigs_Meta::tidy_locality( $final_state );
 
 			// Recorded before any of the branches below, so a dry run still has names.
 			$this->venue_names[ $source_id ] = $final_name;
@@ -847,6 +929,7 @@ class MBE_Gigs_Importer {
 		}
 
 		$city    = ( ! empty( $map['city'] ) && isset( $row[ $map['city'] ] ) ) ? trim( (string) $row[ $map['city'] ] ) : '';
+		$city    = MBE_Gigs_Meta::tidy_locality( $city );
 		$term_id = $this->find_venue_term( $name, $city );
 
 		if ( $term_id ) {

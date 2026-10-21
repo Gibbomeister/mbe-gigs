@@ -54,7 +54,7 @@ shareable link per date — that site then needs a Themer singular layout to go 
 | `mbe_gig_end_date` | `YYYY-MM-DD` | Festivals and multi-day runs only. |
 | `mbe_gig_ticket_url` | URL | |
 | `mbe_gig_price` | text | Free text — "$25", "Free entry". |
-| `mbe_gig_status` | `scheduled` / `cancelled` / `postponed` | |
+| `mbe_gig_status` | `scheduled` / `cancelled` / `postponed` / `private` | `private` lists the gig as "Private function" and the suburb only — see below |
 | `mbe_gig_tour` | text | The tour or billing, e.g. "Final Blitz with Sweet". A name, not a taxonomy. |
 | `mbe_gig_title` | text | Optional override. Blank means the title is generated. |
 
@@ -174,6 +174,8 @@ Flush permalinks after changing any slug or archive filter: **Settings → Perma
 | `country` | `auto` | Country after the city — `auto` shows it only for venues outside the home country (`mbe_gigs_home_country`, default `AU`), `yes` always, `no` never |
 | `tickets_label` | `Tickets` | Text on the ticket link |
 | `layout` | `table` | `table` for aligned columns, `tiles` for calendar-tile dates |
+| `css` | `yes` | `no` leaves this list unstyled: the wrapper gets `mbe-gigs--unstyled` instead of the layout class, so none of the layout rules match. The stylesheet stays loaded for other lists |
+| `private` | `show` | `hide` leaves private functions out of this list |
 | `date_format` | site setting | Any PHP date format |
 | `empty` | — | Message when there are no gigs |
 | `class` | — | Extra class on the wrapper |
@@ -183,6 +185,31 @@ GigPress shortcode. It doesn't need a Themer layout and it doesn't need the gig 
 Beaver Builder's Posts module can't be used for this: it renders each item with its own
 markup and offers no way to lay a gig out from its fields, so a ticket link, a start time
 and a cancelled badge could not be separate elements there at all.
+
+### Private functions
+
+Set a gig's status to **Private function** for a booking that should show the act is
+busy without saying where — a wedding, a corporate night. It lists as the date, the
+artist, the suburb and "Private function": no venue name or link, no address, no time,
+no notes, no ticket link. The row gets `mbe-gig--private`. Private functions are left
+off venue pages altogether (listing one under its venue would give the venue away), and
+`[mbe_gigs private="hide"]` leaves them off any other list. The Themer field
+connections follow the same rule.
+
+They're still ordinary gig posts, so the venue is visible in the admin and through the
+REST API like any other gig — it is kept off the pages, not secret.
+
+### The next gig
+
+On an upcoming list, the next gig that's going ahead (cancelled and postponed are passed
+over) gets `mbe-gig--next`, so a homepage can feature it:
+
+```css
+.mbe-gig--next .mbe-gig__day { font-size: 3em; }
+```
+
+Use that rather than `.mbe-gig:first-child`, which picks up a tour heading when tour
+grouping is on and the wrong end of the list with `order="desc"`.
 
 ### Venue and artist pages
 
@@ -250,11 +277,21 @@ match the page — and belongs in the theme or the Themer layout CSS:
 .mbe-gig__venue   { font-size: 1.15em; }
 ```
 
-To start from nothing and write it all yourself:
+To restyle one list from scratch — a redesign with its own layout — without first
+undoing the grid:
+
+```
+[mbe_gigs css="no" class="flyer"]
+```
+
+To start from nothing site-wide and write it all yourself:
 
 ```php
 add_filter( 'mbe_gigs_enqueue_styles', '__return_false' );
 ```
+
+The stylesheet is ASCII only — the dashes and dots in `content:` are CSS escapes — so it
+reads correctly however it's served or concatenated.
 
 It loads on every page rather than only where the shortcode appears. That optimisation
 can't work here: on these sites the shortcode lives inside a Beaver Builder module or a
@@ -265,12 +302,12 @@ of layout rules.
 ### The markup
 
 ```
-div.mbe-gigs.mbe-gigs--upcoming.mbe-gigs--table[.mbe-gigs--with-artist]
+div.mbe-gigs.mbe-gigs--upcoming.mbe-gigs--table[.mbe-gigs--with-artist]   (--tiles, or --unstyled with css="no")
   ul.mbe-gigs__list
     li.mbe-gigs__tour                        (above each run of gigs on one tour)
       span.mbe-gigs__tour-label  Tour:
       span.mbe-gigs__tour-name
-    li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --multi-day, --in-tour)
+    li.mbe-gig.mbe-gig--scheduled            (or --cancelled, --postponed, --private; plus --multi-day, --in-tour, --next)
       div.mbe-gig__dates
         time.mbe-gig__date
           span.mbe-gig__weekday  Thu
@@ -292,6 +329,9 @@ div.mbe-gigs.mbe-gigs--upcoming.mbe-gigs--table[.mbe-gigs--with-artist]
         span.mbe-gig__status                 (only when not scheduled)
         a.mbe-gig__tickets
 ```
+
+A private function's row stops at the venue cell, which reads "Private function", and
+its `.mbe-gig__extra` is empty.
 
 The row is deliberately **flat** — date, artist, location, venue and one extra line as
 siblings, not nested in a details wrapper. A CSS grid can only align its own children,
@@ -337,6 +377,8 @@ wp mbe-gigs inspect                              # tables, columns, row counts �
 wp mbe-gigs import --dry-run                     # full run, nothing written, log produced
 wp mbe-gigs import --venues=venues-worksheet.csv # the real thing
 wp mbe-gigs rollback --yes                       # remove exactly what the importer made
+wp mbe-gigs tidy-localities --dry-run            # list venue cities/states typed in capitals
+wp mbe-gigs tidy-localities                      # title-case them
 ```
 
 **Always `inspect` first.** Column names are discovered rather than assumed, because
@@ -361,6 +403,14 @@ running it again.
 **Venue identity is name + city**, never name alone — the Pier Hotel in Botany and the
 Pier Hotel in Frankston are two different pubs. Venue term meta that already has a
 value is never overwritten, so hand corrections survive re-runs.
+
+**Localities typed in capitals are tidied.** GigPress took the city as free text, so one
+site can have "NARRABEEN NSW" beside "The Entrance NSW". From 2.4.0 the importer
+title-cases a city or state that is entirely upper case — "Narrabeen NSW" — keeping state
+codes (NSW, VIC, QLD, SA, WA, TAS, NT, ACT, plus NZ, UK, USA; filter
+`mbe_gigs_locality_codes`) upper case and leaving anything in mixed case alone, so a
+hand-typed "McGraths Hill" survives. Sites migrated before 2.4.0: run
+`wp mbe-gigs tidy-localities --dry-run`, read the table, then run it without the flag.
 
 The GigPress tables are never read-modified or dropped. The real rollback for a site is
 deactivating GigPress and leaving its tables in place.

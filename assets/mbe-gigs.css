@@ -1,5 +1,5 @@
 /*
- * MBE Gigs — structure only.
+ * MBE Gigs - structure only.
  *
  * This stylesheet lays gigs out. It does not decide how they look.
  *
@@ -11,9 +11,15 @@
  * That discipline is the whole point: a plugin stylesheet that sets type and colour is
  * one every theme has to fight. One that only handles alignment is one nobody notices.
  *
- * Per-site work belongs in the theme or the Themer layout — brand colour on the ticket
- * link, a font weight, spacing to match the page. Turn this off entirely with
- * [mbe_gigs css="no"] or add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
+ * Per-site work belongs in the theme or the Themer layout - brand colour on the ticket
+ * link, a font weight, spacing to match the page. Opt one list out with
+ * [mbe_gigs css="no"] (it gets .mbe-gigs--unstyled and none of the layout rules below
+ * match), or turn the file off site-wide with
+ * add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
+ *
+ * ASCII only. Non-ASCII in content: values is written as a CSS escape, because a
+ * stylesheet served without a charset, or concatenated by an optimiser, is read as
+ * Latin-1 and an en dash turns into mojibake.
  */
 
 /* ---------------------------------------------------------------------------
@@ -60,6 +66,11 @@
 	text-decoration: line-through;
 }
 
+.mbe-gig--private .mbe-gig__venue {
+	font-weight: 400;
+	font-style: italic;
+}
+
 .mbe-gig__status {
 	font-weight: 700;
 	text-transform: uppercase;
@@ -71,7 +82,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Aligned columns — the default
+ * Aligned columns - the default
  *
  * A grid rather than a table. `display: contents` dissolves each row so its cells
  * become the grid's own children, which is what lets dates, cities and venues line
@@ -120,7 +131,7 @@
 }
 
 .mbe-gigs--table .mbe-gig__end-date::before {
-	content: " – ";
+	content: " \2013\20"; /* the escape eats one following space, so the trailing space is escaped too */
 }
 
 .mbe-gigs--table .mbe-gig__extra {
@@ -185,7 +196,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Calendar tiles — [mbe_gigs layout="tiles"]
+ * Calendar tiles - [mbe_gigs layout="tiles"]
  * ------------------------------------------------------------------------ */
 
 .mbe-gigs--tiles .mbe-gig {
@@ -232,7 +243,7 @@
 }
 
 .mbe-gigs--tiles .mbe-gig__end-date::before {
-	content: "–";
+	content: "\2013";
 	display: block;
 	opacity: .5;
 }
@@ -276,7 +287,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Venue and artist pages — templates/term.php
+ * Venue and artist pages - templates/term.php
  * ------------------------------------------------------------------------ */
 
 /* Only off the Beaver Builder theme, which supplies its own container. */
@@ -304,7 +315,7 @@
 }
 
 .mbe-gigs-term__details > span + span::before {
-	content: "·";
+	content: "\00B7";
 	margin: 0 .5em;
 	opacity: .5;
 }

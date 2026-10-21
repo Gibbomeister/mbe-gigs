@@ -37,6 +37,7 @@ class MBE_Gigs_Query {
 	 *     @type mixed  $artist    Artist term ID, slug, or array of either.
 	 *     @type string $date      Cutoff date, YYYY-MM-DD. Defaults to today in the
 	 *                             site's timezone.
+	 *     @type string $private   'show' (default) or 'hide' private functions.
 	 * }
 	 * @return array
 	 */
@@ -51,6 +52,7 @@ class MBE_Gigs_Query {
 				'artist'    => '',
 				'date'      => '',
 				'status'    => '',
+				'private'   => 'show',
 			)
 		);
 
@@ -114,7 +116,31 @@ class MBE_Gigs_Query {
 			);
 		}
 
+		if ( 'hide' === $args['private'] ) {
+			$query['meta_query']['gig_private_clause'] = self::not_private_clause();
+		}
+
 		return apply_filters( 'mbe_gigs_query_args', $query, $args, $direction, $today );
+	}
+
+	/**
+	 * "Not a private function" — no status row, or any status but private.
+	 *
+	 * @return array
+	 */
+	public static function not_private_clause() {
+		return array(
+			'relation' => 'OR',
+			array(
+				'key'     => 'mbe_gig_status',
+				'compare' => 'NOT EXISTS',
+			),
+			array(
+				'key'     => 'mbe_gig_status',
+				'value'   => 'private',
+				'compare' => '!=',
+			),
+		);
 	}
 
 	/**
@@ -321,7 +347,18 @@ class MBE_Gigs_Query {
 		$order = ( 'upcoming' === $direction ) ? 'ASC' : 'DESC';
 		$order = apply_filters( 'mbe_gigs_archive_order', $order, $direction, $query );
 
-		$query->set( 'meta_query', self::meta_query( $direction, $today ) );
+		$meta_query = self::meta_query( $direction, $today );
+
+		/*
+		 * A venue archive drawn by the theme or a Themer layout would list a private
+		 * function under the very venue it's meant to keep quiet, so they're left off.
+		 * (The plugin's own venue page does the same in MBE_Gigs_Term_Page.)
+		 */
+		if ( $query->is_tax( MBE_GIGS_TAX_VENUE ) ) {
+			$meta_query['gig_private_clause'] = self::not_private_clause();
+		}
+
+		$query->set( 'meta_query', $meta_query );
 		$query->set(
 			'orderby',
 			array(
