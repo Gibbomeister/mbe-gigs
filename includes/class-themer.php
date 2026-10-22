@@ -95,6 +95,34 @@ class MBE_Gigs_Themer {
 			return '';
 		}
 
+		/*
+		 * A private function keeps its venue, address, time and links off the site,
+		 * here as in the shortcode. The city and state still resolve — the suburb is
+		 * the one detail a private gig does show.
+		 */
+		if ( MBE_Gigs_Meta::is_private( $post_id ) ) {
+			switch ( $property ) {
+				case 'mbe_gig_venue':
+					$statuses = MBE_Gigs_Meta::statuses();
+
+					return isset( $statuses['private'] ) ? $statuses['private'] : '';
+
+				case 'mbe_gig_venue_line':
+					$venue = MBE_Gigs_Query::get_venue( $post_id );
+					$where = $venue ? trim( get_term_meta( $venue->term_id, 'mbe_venue_city', true ) . ' ' . get_term_meta( $venue->term_id, 'mbe_venue_state', true ) ) : '';
+					$label = MBE_Gigs_Meta::statuses();
+					$label = isset( $label['private'] ) ? $label['private'] : '';
+
+					return '' !== $where ? $label . ', ' . $where : $label;
+
+				case 'mbe_gig_time':
+				case 'mbe_gig_venue_address':
+				case 'mbe_gig_venue_url':
+				case 'mbe_gig_ticket_url':
+					return '';
+			}
+		}
+
 		switch ( $property ) {
 			case 'mbe_gig_date':
 				return MBE_Gigs_Query::get_date( $post_id );

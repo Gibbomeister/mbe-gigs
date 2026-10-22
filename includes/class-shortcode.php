@@ -5,6 +5,7 @@
  *     [mbe_gigs]
  *     [mbe_gigs direction="past" limit="20"]
  *     [mbe_gigs venue="the-bridge-hotel"]
+ *     [mbe_gigs css="no" class="flyer"]
  *
  * This exists because Beaver Builder's Posts module renders each item with its own
  * markup — image, title, excerpt, meta — and offers no way to lay an item out from
@@ -13,8 +14,10 @@
  *
  * The markup is semantic and class-heavy, and assets/mbe-gigs.css lays it out —
  * structure only, no fonts or colours of its own, so a site overrides it with a handful
- * of rules rather than fighting it. A site that wants to start from nothing turns it
- * off with add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
+ * of rules rather than fighting it. One list opts out with css="no", which swaps the
+ * layout class for mbe-gigs--unstyled so none of the layout rules match; a site that
+ * wants to start from nothing turns the file off with
+ * add_filter( 'mbe_gigs_enqueue_styles', '__return_false' ).
  *
  * Optional details are omitted when empty rather than rendered blank, so a stylesheet
  * never has to hide an empty element — except the three grid cells that must always
@@ -82,6 +85,8 @@ class MBE_Gigs_Shortcode {
 				'country'       => 'auto',
 				'tickets_label' => __( 'Tickets', 'mbe-gigs' ),
 				'layout'        => 'table',
+				'css'           => 'yes',
+				'private'       => 'show',
 				'date_format'   => '',
 				'empty'         => __( 'No gigs listed at the moment.', 'mbe-gigs' ),
 				'class'         => '',
@@ -97,10 +102,21 @@ class MBE_Gigs_Shortcode {
 				'order'     => $atts['order'],
 				'venue'     => $atts['venue'],
 				'artist'    => $atts['artist'],
+				'private'   => ( 'hide' === $atts['private'] ) ? 'hide' : 'show',
 			)
 		);
 
 		$layout = in_array( $atts['layout'], array( 'table', 'tiles' ), true ) ? $atts['layout'] : 'table';
+
+		/*
+		 * css="no" leaves this one list bare for a site that restyles it from scratch,
+		 * without having to undo display: contents, the grid columns and the hidden
+		 * date parts first. The stylesheet stays loaded for any other list on the
+		 * page; it just has no layout class here to match.
+		 */
+		if ( in_array( strtolower( (string) $atts['css'] ), array( 'no', 'none', 'off', 'false', '0' ), true ) ) {
+			$layout = 'unstyled';
+		}
 
 		$classes = array(
 			'mbe-gigs',
@@ -145,6 +161,7 @@ class MBE_Gigs_Shortcode {
 		 * expects to see.
 		 */
 		$current_tour = '';
+		$next_id      = self::next_gig_id( $query, $atts['direction'] );
 
 		while ( $query->have_posts() ) {
 			$query->the_post();
@@ -164,7 +181,7 @@ class MBE_Gigs_Shortcode {
 				}
 			}
 
-			$out .= self::render_gig( $post_id, $show_artist, $atts, $group_tours && '' !== $tour );
+			$out .= self::render_gig( $post_id, $show_artist, $atts, $group_tours && '' !== $tour, $post_id === $next_id );
 		}
 
 		$out .= '</ul></div>';
@@ -172,6 +189,44 @@ class MBE_Gigs_Shortcode {
 		wp_reset_postdata();
 
 		return $out;
+	}
+
+	/**
+	 * The gig to mark as the next one, for sites that feature it (a marquee date).
+	 *
+	 * Only on an upcoming list, and worked out from the gigs rather than their
+	 * position, because `.mbe-gig:first-child` breaks twice: a tour heading can be the
+	 * first item, and order="desc" puts the next gig last. Cancelled and postponed
+	 * gigs are passed over — the next gig is the next one that's going ahead.
+	 *
+	 * @param WP_Query $query     The list's query.
+	 * @param string   $direction Shortcode direction.
+	 * @return int Post ID, or 0.
+	 */
+	protected static function next_gig_id( $query, $direction ) {
+		if ( 'upcoming' !== $direction || empty( $query->posts ) ) {
+			return 0;
+		}
+
+		$eligible = array();
+
+		foreach ( $query->posts as $post ) {
+			$id     = is_object( $post ) ? (int) $post->ID : (int) $post;
+			$status = (string) get_post_meta( $id, 'mbe_gig_status', true );
+
+			if ( ! in_array( $status, array( 'cancelled', 'postponed' ), true ) ) {
+				$eligible[] = $id;
+			}
+		}
+
+		if ( ! $eligible ) {
+			return 0;
+		}
+
+		$orderby = (array) $query->get( 'orderby' );
+		$order   = isset( $orderby['mbe_gig_date_clause'] ) ? strtoupper( (string) $orderby['mbe_gig_date_clause'] ) : 'ASC';
+
+		return ( 'DESC' === $order ) ? (int) end( $eligible ) : (int) reset( $eligible );
 	}
 
 	/**
@@ -221,9 +276,10 @@ class MBE_Gigs_Shortcode {
 	 * @param bool  $show_artist Whether to print the artist.
 	 * @param array $atts        Shortcode attributes.
 	 * @param bool  $in_tour     Whether a tour heading above already names this gig's tour.
+	 * @param bool  $is_next     Whether this is the next gig going ahead.
 	 * @return string
 	 */
-	protected static function render_gig( $post_id, $show_artist, $atts, $in_tour = false ) {
+	protected static function render_gig( $post_id, $show_artist, $atts, $in_tour = false, $is_next = false ) {
 		$date   = (string) get_post_meta( $post_id, 'mbe_gig_date', true );
 		$end    = (string) get_post_meta( $post_id, 'mbe_gig_end_date', true );
 		$status = (string) get_post_meta( $post_id, 'mbe_gig_status', true );
@@ -239,7 +295,19 @@ class MBE_Gigs_Shortcode {
 			$classes[] = 'mbe-gig--in-tour';
 		}
 
+		if ( $is_next ) {
+			$classes[] = 'mbe-gig--next';
+		}
+
 		$venue = MBE_Gigs_Query::get_venue( $post_id );
+
+		/*
+		 * A private function shows that the act is booked, and where in broad terms —
+		 * the suburb — but not the venue, its address or link, the time, the notes or a
+		 * ticket link. Performers list these so the diary reads busy, not to announce
+		 * a wedding's location.
+		 */
+		$private = ( 'private' === $status );
 
 		$out = sprintf( '<li class="%s">', esc_attr( implode( ' ', $classes ) ) );
 
@@ -272,6 +340,17 @@ class MBE_Gigs_Shortcode {
 		}
 
 		$out .= sprintf( '<p class="mbe-gig__location">%s</p>', esc_html( $where ) );
+
+		if ( $private ) {
+			$labels = MBE_Gigs_Meta::statuses();
+
+			$out .= sprintf(
+				'<p class="mbe-gig__venue">%s</p><p class="mbe-gig__extra"></p></li>',
+				esc_html( isset( $labels['private'] ) ? $labels['private'] : __( 'Private function', 'mbe-gigs' ) )
+			);
+
+			return $out;
+		}
 
 		$out .= sprintf(
 			'<p class="mbe-gig__venue">%s</p>',

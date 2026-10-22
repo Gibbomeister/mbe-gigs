@@ -726,6 +726,7 @@ class MBE_Gigs_Admin {
 			.mbe-status { display: inline-block; padding: 2px 8px; border-radius: 9px; font-size: 12px; background: #edeff0; }
 			.mbe-status-cancelled { background: #f7dcdc; color: #8a1f1f; }
 			.mbe-status-postponed { background: #fcf1dc; color: #8a5b1f; }
+			.mbe-status-private { background: #e4e0f2; color: #3f3470; }
 			.mbe-listed-as { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid #f0f0f1; color: #50575e; }
 			.mbe-editor-heading { margin: 22px 0 2px; font-size: 14px; }
 			.mbe-editor-help { margin: 0 0 8px; }

@@ -21,6 +21,11 @@ class MBE_Gigs_Meta {
 	/**
 	 * Gig statuses. GigPress had two; postponed is worth the extra line.
 	 *
+	 * "Private function" is for bookings a performer lists so the diary shows they're
+	 * busy — a wedding, a corporate night. The gig still appears, but as "Private
+	 * function" and the suburb: no venue name or link, no address, no time, no notes,
+	 * no ticket link. See is_private().
+	 *
 	 * @return array
 	 */
 	public static function statuses() {
@@ -30,8 +35,98 @@ class MBE_Gigs_Meta {
 				'scheduled' => __( 'Scheduled', 'mbe-gigs' ),
 				'cancelled' => __( 'Cancelled', 'mbe-gigs' ),
 				'postponed' => __( 'Postponed', 'mbe-gigs' ),
+				'private'   => __( 'Private function', 'mbe-gigs' ),
 			)
 		);
+	}
+
+	/**
+	 * Whether a gig is a private function, whose venue and details stay off the site.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	public static function is_private( $post_id ) {
+		return 'private' === (string) get_post_meta( (int) $post_id, 'mbe_gig_status', true );
+	}
+
+	/**
+	 * Codes that stay upper case when a locality is tidied: Australian states and
+	 * territories, plus the country abbreviations that turn up in GigPress cities.
+	 *
+	 * @return string[]
+	 */
+	public static function locality_codes() {
+		return (array) apply_filters(
+			'mbe_gigs_locality_codes',
+			array( 'NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT', 'NZ', 'UK', 'USA', 'US' )
+		);
+	}
+
+	/**
+	 * Title-case a locality typed in all capitals; leave anything else alone.
+	 *
+	 *     "NARRABEEN NSW"    -> "Narrabeen NSW"
+	 *     "PORT O'CONNOR"    -> "Port O'Connor"
+	 *     "BUDGEWOI-TOUKLEY" -> "Budgewoi-Toukley"
+	 *     "The Entrance NSW" -> unchanged (already mixed case)
+	 *     "NSW"              -> unchanged (a code on its own)
+	 *
+	 * Only values with no lower-case letters at all are touched, so a hand-typed
+	 * "McGraths Hill" is never flattened to "Mcgraths Hill".
+	 *
+	 * @param string $value City, suburb or state.
+	 * @return string
+	 */
+	public static function tidy_locality( $value ) {
+		$value = (string) $value;
+
+		// Nothing to do unless there's a letter and none of them are lower case.
+		if ( ! preg_match( '/\p{L}/u', $value ) || preg_match( '/\p{Ll}/u', $value ) ) {
+			return $value;
+		}
+
+		$codes = array_map( 'strtoupper', self::locality_codes() );
+		$small = array( 'of', 'and', 'on', 'upon' );
+		$words = preg_split( '/(\s+)/u', $value, -1, PREG_SPLIT_DELIM_CAPTURE );
+		$first = true;
+
+		foreach ( $words as $i => $word ) {
+			if ( '' === $word || preg_match( '/^\s+$/u', $word ) ) {
+				continue;
+			}
+
+			$bare = trim( $word, '(),.' );
+
+			if ( in_array( $bare, $codes, true ) ) {
+				$first = false;
+				continue;
+			}
+
+			$lower = mb_strtolower( $word, 'UTF-8' );
+
+			if ( ! $first && in_array( $lower, $small, true ) ) {
+				$words[ $i ] = $lower;
+				continue;
+			}
+
+			/*
+			 * Capitalise at the start, after a hyphen or an opening bracket, and after
+			 * the apostrophe of a one-letter prefix (O'Connor, D'Aguilar) — but not in
+			 * a possessive, or "KING'S CROSS" would come out "King'S Cross".
+			 */
+			$words[ $i ] = preg_replace_callback(
+				"/(^|[-(]|(?<=^\p{L}['\x{2019}])|(?<=[-(]\p{L}['\x{2019}]))(\p{L})/u",
+				function ( $m ) {
+					return $m[1] . mb_strtoupper( $m[2], 'UTF-8' );
+				},
+				$lower
+			);
+
+			$first = false;
+		}
+
+		return implode( '', $words );
 	}
 
 	/**

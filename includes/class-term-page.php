@@ -124,6 +124,8 @@ class MBE_Gigs_Term_Page {
 				'direction' => $direction,
 				'limit'     => -1,
 				$key        => $term->term_id,
+				// A venue page must not out a private function held there.
+				'private'   => ( 'venue' === $key ) ? 'hide' : 'show',
 			)
 		);
 
@@ -251,6 +253,8 @@ class MBE_Gigs_Term_Page {
 			'venue_link'  => $is_venue ? 'none' : 'archive',
 			// Same for the artist on their own page.
 			'show_artist' => $is_venue ? 'auto' : 'no',
+			// Listing a private function under its venue gives the venue away.
+			'private'     => $is_venue ? 'hide' : 'show',
 		);
 
 		return (array) apply_filters( 'mbe_gigs_term_shortcode_atts', $atts, $term, $direction );
